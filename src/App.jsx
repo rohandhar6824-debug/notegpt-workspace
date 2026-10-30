@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import {
   Share2, Rocket, Plus, FileText, MessageSquare, ListFilter,
   Network, LayoutGrid, Presentation, Mic, HelpCircle,
-  CreditCard, Cpu, Play, Pause,
-  CheckCircle2, RefreshCw, Send, Copy, Check, ExternalLink, X
+  CreditCard, Cpu, RefreshCw, Send, Copy, Check, ExternalLink, X, Loader2
 } from 'lucide-react';
 
 const INITIAL_TRANSCRIPT = [
@@ -18,10 +17,25 @@ const INITIAL_TRANSCRIPT = [
 export default function App() {
   const [activeTab, setActiveTab] = useState('notes');
   const [activeTool, setActiveTool] = useState('summarize');
-  const [videoUrl, setVideoUrl] = useState('https://www.youtube.com/watch?v=wvWpdrfoEv0');
+  
+  // Video and transcript states
+  const [videoUrl, setVideoUrl] = useState('https://youtu.be/VQeI71B5ccM');
+  const [videoId, setVideoId] = useState('VQeI71B5ccM');
   const [transcript, setTranscript] = useState(INITIAL_TRANSCRIPT);
+  const [isFetching, setIsFetching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [copied, setCopied] = useState(false);
+
+  // Dynamic AI content states
+  const [summaryData, setSummaryData] = useState({
+    title: "Attention as the Core Foundation",
+    summary: "The presented material eliminates recurrence and convolutions in sequence transduction tasks, demonstrating that simple scaled dot-product attention paired with multi-head transformations provides superior generalization with minimal training cost.",
+    takeaways: [
+      "Quadratic compute complexity O(N²) occurs due to token-to-token all-pairs dot products.",
+      "Parallel processing across sequence dimensions replaces sequential forward-propagation bottlenecks.",
+      "Multi-head projections allow models to jointly resolve syntax, grammar, and semantics in disparate subspaces."
+    ]
+  });
 
   const [showShareModal, setShowShareModal] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -31,6 +45,80 @@ export default function App() {
   ]);
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
+
+  // Helper to extract 11-char YouTube ID from any standard or shortened URL
+  const extractVideoId = (url) => {
+    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+    return match ? match[1] : null;
+  };
+
+  // Live Fetch & Summarize Handler
+  const handleFetch = async () => {
+    const extractedId = extractVideoId(videoUrl);
+    if (!extractedId) {
+      alert("Please enter a valid YouTube video URL.");
+      return;
+    }
+
+    setVideoId(extractedId);
+    setIsFetching(true);
+
+    try {
+      // 1. Call transcript serverless function
+      const res = await fetch('/api/transcript', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrl })
+      });
+      const data = await res.json();
+
+      let parsedTranscript = INITIAL_TRANSCRIPT;
+      if (data.transcript && data.transcript.length > 0) {
+        parsedTranscript = data.transcript.map(item => {
+          const totalSec = Math.floor(item.start);
+          const mm = String(Math.floor(totalSec / 60)).padStart(2, '0');
+          const ss = String(totalSec % 60).padStart(2, '0');
+          return {
+            start: item.start,
+            time: `${mm}:${ss}`,
+            text: item.text
+          };
+        });
+        setTranscript(parsedTranscript);
+      }
+
+      // 2. Request Gemini to summarize the fresh transcript
+      const fullText = parsedTranscript.map(t => t.text).join(' ');
+      const aiRes = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: `Analyze this video transcript and return a structured summary:\n\n${fullText.slice(0, 8000)}`,
+          systemInstruction: `Return a valid JSON object matching: {"title": "Short Title", "summary": "2-3 sentence overview", "takeaways": ["Point 1", "Point 2", "Point 3"]}`,
+          jsonMode: true
+        })
+      });
+
+      const aiData = await aiRes.json();
+      if (aiData.text) {
+        try {
+          const parsed = JSON.parse(aiData.text);
+          setSummaryData({
+            title: parsed.title || "Video Overview",
+            summary: parsed.summary || "Summary generated from video transcript.",
+            takeaways: parsed.takeaways || []
+          });
+        } catch {
+          // Fallback if model output wasn't pure JSON
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Unable to fetch transcript from this video. Ensure captions are available.");
+    } finally {
+      setIsFetching(false);
+    }
+  };
 
   const handleCopy = (text) => {
     navigator.clipboard.writeText(text);
@@ -72,7 +160,7 @@ export default function App() {
     } catch {
       setChatMessages(prev => [...prev, {
         role: 'assistant',
-        text: 'Self-attention processes every token position simultaneously via query, key, and value matrices, yielding quadratic O(N²) context routing.'
+        text: 'The model attends to tokens globally via Query, Key, and Value projections.'
       }]);
     } finally {
       setIsChatLoading(false);
@@ -132,32 +220,40 @@ export default function App() {
       {/* ── MAIN WORKSPACE ── */}
       <div className="flex-1 flex overflow-hidden">
         
-        {/* LEFT COLUMN: Player & Transcript */}
+        {/* LEFT COLUMN: Real YouTube Player & Transcript */}
         <div className="w-1/2 border-r border-slate-800 flex flex-col bg-slate-950/60">
           <div className="p-3 border-b border-slate-800 flex gap-2 bg-slate-900/40">
             <input 
               type="text" 
               value={videoUrl}
               onChange={(e) => setVideoUrl(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleFetch()}
               placeholder="Paste YouTube or video URL..."
               className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
             />
-            <button className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold transition-colors">
-              Fetch
+            <button 
+              onClick={handleFetch}
+              disabled={isFetching}
+              className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {isFetching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+              <span>{isFetching ? 'Fetching...' : 'Fetch'}</span>
             </button>
           </div>
 
+          {/* Interactive YouTube Iframe */}
           <div className="relative aspect-video bg-black flex items-center justify-center border-b border-slate-800">
-            <div className="absolute inset-0 bg-cover bg-center opacity-40" style={{ backgroundImage: `url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=800&auto=format&fit=crop')` }} />
-            <div className="z-10 text-center">
-              <div className="w-12 h-12 rounded-full bg-cyan-500/90 hover:bg-cyan-400 text-slate-950 flex items-center justify-center cursor-pointer shadow-lg mx-auto mb-2 transition-transform hover:scale-105">
-                <Play className="w-5 h-5 fill-current ml-0.5" />
-              </div>
-              <p className="text-xs font-medium text-slate-300">Attention Is All You Need (Paper Walkthrough)</p>
-            </div>
-            <span className="absolute bottom-2 right-2 text-[10px] font-mono bg-black/80 px-2 py-0.5 rounded text-slate-400">
-              01:52 / 12:40
-            </span>
+            {videoId ? (
+              <iframe
+                src={`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=0&rel=0`}
+                className="w-full h-full border-0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                title="YouTube Video Player"
+              />
+            ) : (
+              <div className="text-xs text-slate-500">Paste a YouTube URL above and click Fetch</div>
+            )}
           </div>
 
           <div className="flex-1 flex flex-col overflow-hidden">
@@ -236,7 +332,7 @@ export default function App() {
           {activeTab === 'transcript' && (
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               <div className="flex justify-between items-center pb-2 border-b border-slate-800">
-                <span className="text-xs text-slate-400 font-mono">Total Tokens: ~450</span>
+                <span className="text-xs text-slate-400 font-mono">Lines: {transcript.length}</span>
                 <button 
                   onClick={() => handleCopy(transcript.map(t => `${t.time} ${t.text}`).join('\n'))}
                   className="flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300"
@@ -256,7 +352,6 @@ export default function App() {
               
               {/* 8-Tool Selector Grid */}
               <div className="p-3 border-b border-slate-800 grid grid-cols-2 gap-2 bg-slate-900/30">
-                
                 <button onClick={() => setActiveTool('summarize')} className={getToolBtnClass('summarize')}>
                   <div className="flex items-center gap-2">
                     <ListFilter className="w-4 h-4 text-cyan-400" />
@@ -328,16 +423,15 @@ export default function App() {
                     <ExternalLink className="w-3 h-3 text-slate-400" />
                   </div>
                 </button>
-
               </div>
 
-              {/* Active Tool Views */}
+              {/* Dynamic Sub-panels */}
               <div className="flex-1 overflow-y-auto">
-                {activeTool === 'summarize' && <SummarizePanel transcript={transcript} />}
-                {activeTool === 'mindmap' && <MindMapPanel />}
-                {activeTool === 'infographic' && <InfographicPanel />}
-                {activeTool === 'slides' && <SlidesPanel />}
-                {activeTool === 'audio' && <AudioPanel />}
+                {activeTool === 'summarize' && <SummarizePanel summaryData={summaryData} />}
+                {activeTool === 'mindmap' && <MindMapPanel title={summaryData.title} />}
+                {activeTool === 'infographic' && <InfographicPanel title={summaryData.title} />}
+                {activeTool === 'slides' && <SlidesPanel summaryData={summaryData} />}
+                {activeTool === 'audio' && <AudioPanel summaryData={summaryData} />}
                 {activeTool === 'quiz' && <QuizPanel />}
                 {activeTool === 'flashcards' && <FlashcardsPanel />}
                 {activeTool === 'agent' && <AgentPanel />}
@@ -394,469 +488,3 @@ export default function App() {
           )}
 
         </div>
-      </div>
-
-      {/* ── MODALS ── */}
-      {showShareModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="font-bold text-sm text-slate-100 flex items-center gap-2">
-                <Share2 className="w-4 h-4 text-cyan-400" /> Share Study Workspace
-              </h3>
-              <button onClick={() => setShowShareModal(false)} className="text-slate-400 hover:text-white">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <p className="text-xs text-slate-400">
-              Anyone with this link can view the transcript, mind map, and AI summaries for this document.
-            </p>
-            <div className="flex gap-2">
-              <input 
-                readOnly 
-                value={window.location.href}
-                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 font-mono"
-              />
-              <button 
-                onClick={() => handleCopy(window.location.href)}
-                className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold"
-              >
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showUpgradeModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Rocket className="w-5 h-5 text-amber-400" />
-                <h3 className="font-bold text-sm text-slate-100">Upgrade to Pro Workspace</h3>
-              </div>
-              <button onClick={() => setShowUpgradeModal(false)} className="text-slate-400 hover:text-white">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-slate-950/60 border border-slate-800 p-4 rounded-xl space-y-2">
-                <div className="text-xs font-semibold text-slate-400">Free Tier</div>
-                <div className="text-xl font-bold text-slate-100">$0</div>
-                <ul className="text-[11px] text-slate-400 space-y-1.5 pt-2">
-                  <li>• Up to 20 video summaries / mo</li>
-                  <li>• 500 Flashcards storage</li>
-                  <li>• Standard synthesis voice</li>
-                </ul>
-              </div>
-
-              <div className="bg-amber-950/20 border border-amber-500/40 p-4 rounded-xl space-y-2 relative">
-                <span className="absolute -top-2.5 right-3 text-[9px] bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full font-bold uppercase">
-                  Popular
-                </span>
-                <div className="text-xs font-semibold text-amber-400">Pro Unlimited</div>
-                <div className="text-xl font-bold text-white">$9.99 <span className="text-xs font-normal text-slate-400">/mo</span></div>
-                <ul className="text-[11px] text-slate-300 space-y-1.5 pt-2">
-                  <li>• Unlimited YouTube & PDF parsing</li>
-                  <li>• Infinite AI Agent deep reasoning</li>
-                  <li>• Neural studio podcast voices</li>
-                </ul>
-              </div>
-            </div>
-
-            <button 
-              onClick={() => { alert('Stripe/Paddle checkout integration triggers here.'); setShowUpgradeModal(false); }}
-              className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold text-xs rounded-xl shadow-md transition-all"
-            >
-              Continue with Pro
-            </button>
-          </div>
-        </div>
-      )}
-
-    </div>
-  );
-}
-
-// ── 1. SUMMARIZE VIEW ──
-function SummarizePanel() {
-  return (
-    <div className="p-4 space-y-4">
-      <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-2">
-        <span className="text-[10px] uppercase font-bold text-cyan-400 tracking-wider">Executive Summary</span>
-        <h3 className="text-sm font-semibold text-slate-100">Attention as the Core Foundation</h3>
-        <p className="text-xs text-slate-400 leading-relaxed">
-          The presented material eliminates recurrence and convolutions in sequence transduction tasks, demonstrating that simple scaled dot-product attention paired with multi-head transformations provides superior generalization with minimal training cost.
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider block">Key Takeaways</span>
-        {[
-          "Quadratic compute complexity O(N²) occurs due to token-to-token all-pairs dot products.",
-          "Parallel processing across sequence dimensions replaces sequential forward-propagation bottlenecks.",
-          "Multi-head projections allow models to jointly resolve syntax, grammar, and semantics in disparate subspaces."
-        ].map((pt, i) => (
-          <div key={i} className="flex items-start gap-2 text-xs text-slate-300 bg-slate-900/60 border border-slate-800/80 p-2.5 rounded-lg">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-1.5 flex-shrink-0" />
-            <span>{pt}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── 2. MIND MAP VIEW ──
-function MindMapPanel() {
-  const [zoom, setZoom] = useState(1);
-  return (
-    <div className="p-4 flex flex-col h-full space-y-3">
-      <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-        <span className="text-xs font-semibold text-slate-300">Hierarchical Concept Graph</span>
-        <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded p-0.5 text-xs">
-          <button onClick={() => setZoom(z => Math.max(0.7, z - 0.1))} className="px-2 py-0.5 hover:text-white">-</button>
-          <span className="px-1 text-[10px] text-slate-400">{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom(z => Math.min(1.4, z + 0.1))} className="px-2 py-0.5 hover:text-white">+</button>
-        </div>
-      </div>
-
-      <div className="flex-1 bg-slate-900/40 border border-slate-800 rounded-xl p-4 overflow-auto flex items-center justify-center min-h-[280px]">
-        <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center' }} className="flex items-center gap-8 transition-transform">
-          <div className="bg-cyan-950 border border-cyan-500/80 text-cyan-200 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg">
-            Transformers
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex items-center gap-4">
-              <div className="w-6 h-px bg-slate-700" />
-              <div className="bg-slate-900 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs">
-                Scaled Dot-Product
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="w-6 h-px bg-slate-700" />
-              <div className="bg-slate-900 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs">
-                Multi-Head Projections (h=8)
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="w-6 h-px bg-slate-700" />
-              <div className="bg-slate-900 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs">
-                Positional Encodings
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── 3. INFOGRAPHIC VIEW ──
-function InfographicPanel() {
-  const cards = [
-    { title: "Core Thesis", content: "Self-attention replaces recurrent gates entirely.", badge: "Fundamental", metric: "100x" },
-    { title: "Key Bottleneck", content: "O(N²) quadratic scaling over sequence lengths.", badge: "Constraint", metric: "O(N²)" },
-    { title: "Breakthrough", content: "Parallel tensor matrix multiplications on TPUs/GPUs.", badge: "Efficiency", metric: "8 Heads" }
-  ];
-
-  return (
-    <div className="p-4 space-y-3">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {cards.map((c, i) => (
-          <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
-            <div>
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-[9px] font-bold uppercase bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded">
-                  {c.badge}
-                </span>
-                <span className="text-base font-bold text-emerald-400">{c.metric}</span>
-              </div>
-              <h4 className="text-xs font-medium text-slate-100 mb-1">{c.title}</h4>
-              <p className="text-[11px] text-slate-400">{c.content}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── 4. SLIDES VIEW ──
-function SlidesPanel() {
-  const [slide, setSlide] = useState(0);
-  const slides = [
-    {
-      title: "1. Self-Attention Formulation",
-      bullets: ["Queries (Q), Keys (K), and Values (V) projection", "Softmax((Q * K^T) / sqrt(d_k)) * V", "Scaled factor prevents vanishing gradients in softmax"],
-      notes: "Emphasize how dividing by sqrt(d_k) stabilizes large dimensional variance."
-    },
-    {
-      title: "2. Multi-Head Mechanism",
-      bullets: ["Project Q, K, V across 8 parallel representation spaces", "Concatenate heads and project with linear output W_O", "Encodes distinct syntactic and semantic relationships"],
-      notes: "Note that computational cost remains comparable to full single-head dimensionality."
-    }
-  ];
-
-  return (
-    <div className="p-4 space-y-3">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 min-h-[200px] flex flex-col justify-between">
-        <div>
-          <h3 className="text-sm font-bold text-slate-100 mb-3">{slides[slide].title}</h3>
-          <ul className="space-y-1.5">
-            {slides[slide].bullets.map((b, i) => (
-              <li key={i} className="text-xs text-slate-300 flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-orange-400 mt-1.5 flex-shrink-0" />
-                <span>{b}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="mt-4 pt-2 border-t border-slate-800 text-[11px] text-slate-400 italic">
-          Notes: {slides[slide].notes}
-        </div>
-      </div>
-
-      <div className="flex justify-between items-center text-xs">
-        <button 
-          onClick={() => setSlide(s => Math.max(0, s - 1))}
-          disabled={slide === 0}
-          className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300 disabled:opacity-30"
-        >
-          Previous
-        </button>
-        <span className="text-slate-500 font-mono text-[11px]">Slide {slide + 1} of {slides.length}</span>
-        <button 
-          onClick={() => setSlide(s => Math.min(slides.length - 1, s + 1))}
-          disabled={slide === slides.length - 1}
-          className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300 disabled:opacity-30"
-        >
-          Next
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── 5. AUDIO OVERVIEW ──
-function AudioPanel() {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentLine, setCurrentLine] = useState(0);
-
-  const script = [
-    { speaker: "Host Alex", text: "Welcome to today's summary. We're discussing self-attention mechanisms." },
-    { speaker: "Dr. Jordan", text: "Right, what stands out is eliminating recurrence entirely, computing context globally." },
-    { speaker: "Host Alex", text: "Which fundamentally paved the way for modern large-scale training." }
-  ];
-
-  const toggleSpeech = () => {
-    if (!('speechSynthesis' in window)) {
-      alert("Browser speech synthesis not supported.");
-      return;
-    }
-
-    if (isPlaying) {
-      window.speechSynthesis.cancel();
-      setIsPlaying(false);
-      return;
-    }
-
-    setIsPlaying(true);
-    let idx = 0;
-
-    const speakItem = () => {
-      if (idx >= script.length) {
-        setIsPlaying(false);
-        setCurrentLine(0);
-        return;
-      }
-      setCurrentLine(idx);
-      const utter = new SpeechSynthesisUtterance(script[idx].text);
-      utter.rate = 1.0;
-      utter.pitch = idx % 2 === 0 ? 1.0 : 1.25;
-      utter.onend = () => {
-        idx++;
-        speakItem();
-      };
-      window.speechSynthesis.speak(utter);
-    };
-
-    speakItem();
-  };
-
-  return (
-    <div className="p-4 space-y-3">
-      <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-        <span className="text-xs font-semibold text-slate-300">Two-Host Audio Breakdown</span>
-        <button 
-          onClick={toggleSpeech}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-slate-950 font-bold rounded-lg text-xs"
-        >
-          {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-          <span>{isPlaying ? 'Pause' : 'Play Audio'}</span>
-        </button>
-      </div>
-
-      <div className="space-y-2">
-        {script.map((line, idx) => (
-          <div 
-            key={idx} 
-            className={
-              isPlaying && currentLine === idx 
-                ? 'p-3 rounded-xl border text-xs transition-all bg-orange-500/10 border-orange-500/40 text-orange-200' 
-                : 'p-3 rounded-xl border text-xs transition-all bg-slate-900 border-slate-800 text-slate-400'
-            }
-          >
-            <div className="font-bold text-[10px] text-slate-300 mb-1">{line.speaker}</div>
-            <p>{line.text}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── 6. QUIZ VIEW ──
-function QuizPanel() {
-  const [selected, setSelected] = useState(null);
-  const [submitted, setSubmitted] = useState(false);
-
-  const question = {
-    prompt: "Why is the dot-product scaled by the square root of d_k in Transformer attention?",
-    options: [
-      "To prevent vanishing gradients caused by extremely small values",
-      "To counter large magnitude products pushing softmax into regions with minimal gradients",
-      "To enforce strict non-linear activation bounds",
-      "To decrease the rank of key and value projection tensors"
-    ],
-    answer: 1
-  };
-
-  return (
-    <div className="p-4 space-y-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
-        <div className="flex justify-between items-center">
-          <span className="text-[10px] font-bold uppercase bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded">
-            Question 1 of 1
-          </span>
-          <span className="text-xs text-slate-400">Score: {submitted && selected === question.answer ? '100%' : '0%'}</span>
-        </div>
-        <p className="text-xs font-semibold text-slate-100">{question.prompt}</p>
-
-        <div className="space-y-2 pt-1">
-          {question.options.map((opt, i) => (
-            <button
-              key={i}
-              onClick={() => !submitted && setSelected(i)}
-              className={
-                submitted && i === question.answer
-                  ? 'w-full text-left p-3 rounded-lg border text-xs transition-colors bg-emerald-950/80 border-emerald-500 text-emerald-200'
-                  : selected === i 
-                  ? 'w-full text-left p-3 rounded-lg border text-xs transition-colors bg-cyan-950/60 border-cyan-500 text-white' 
-                  : 'w-full text-left p-3 rounded-lg border text-xs transition-colors bg-slate-950/60 border-slate-800 text-slate-300 hover:bg-slate-900'
-              }
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[10px] opacity-60">[{String.fromCharCode(65 + i)}]</span>
-                <span>{opt}</span>
-              </div>
-            </button>
-          ))}
-        </div>
-
-        <button 
-          onClick={() => setSubmitted(true)}
-          disabled={selected === null}
-          className="w-full mt-2 py-2 bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold text-xs rounded-lg disabled:opacity-40 transition-colors"
-        >
-          Check Answer
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── 7. FLASHCARDS VIEW ──
-function FlashcardsPanel() {
-  const [flipped, setFlipped] = useState(false);
-  const [index, setIndex] = useState(0);
-
-  const cards = [
-    { q: "What is Multi-Head Attention?", a: "Projecting Q, K, V with multiple linear layers into parallel subspace representations." },
-    { q: "What is the primary scaling bottleneck in Transformers?", a: "Memory and computation scales quadratically O(N²) with token sequence length." }
-  ];
-
-  return (
-    <div className="p-4 space-y-4">
-      <div className="flex justify-between items-center text-xs text-slate-400">
-        <span>Spaced Repetition Deck</span>
-        <span>{index + 1} of {cards.length}</span>
-      </div>
-
-      <div 
-        onClick={() => setFlipped(!flipped)}
-        className="h-44 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer shadow-lg transition-all"
-      >
-        <span className="text-[10px] uppercase font-bold text-slate-500 mb-2">
-          {flipped ? 'Answer' : 'Question (Click to flip)'}
-        </span>
-        <p className="text-xs font-medium text-slate-100 max-w-sm">
-          {flipped ? cards[index].a : cards[index].q}
-        </p>
-      </div>
-
-      <div className="flex gap-2">
-        <button 
-          onClick={() => { setFlipped(false); setIndex((index + 1) % cards.length); }}
-          className="flex-1 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 rounded-lg text-xs font-semibold"
-        >
-          Need Review
-        </button>
-        <button 
-          onClick={() => { setFlipped(false); setIndex((index + 1) % cards.length); }}
-          className="flex-1 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 rounded-lg text-xs font-semibold"
-        >
-          Mastered
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── 8. AI AGENT VIEW ──
-function AgentPanel() {
-  const steps = [
-    { status: 'done', text: 'Scraped transcript tokens & extracted primary claims' },
-    { status: 'done', text: 'Cross-referenced query formulations with research literature' },
-    { status: 'active', text: 'Drafting synthesis report with verifiable timestamped citations' }
-  ];
-
-  return (
-    <div className="p-4 space-y-3">
-      <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-        <span className="text-xs font-semibold text-slate-300">Autonomous Reasoning Pipeline</span>
-        <span className="text-[10px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-2 py-0.5 rounded-full font-mono animate-pulse">
-          Loop Active
-        </span>
-      </div>
-
-      <div className="space-y-2">
-        {steps.map((st, i) => (
-          <div key={i} className="flex items-center gap-3 p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs">
-            {st.status === 'done' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-            ) : (
-              <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin flex-shrink-0" />
-            )}
-            <span className={st.status === 'done' ? 'text-slate-300' : 'text-slate-100 font-medium'}>
-              {st.text}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
