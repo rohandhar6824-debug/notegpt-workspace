@@ -6,41 +6,69 @@ import {
   Play, Pause
 } from 'lucide-react';
 
-const INITIAL_TRANSCRIPT = [
-  { start: 0, time: "00:00", text: "Welcome to our overview of Attention Mechanisms and Transformer architectures." },
-  { start: 14, time: "00:14", text: "Traditional sequence transductions relied primarily on recurrent or convolutional nets." },
-  { start: 32, time: "00:32", text: "The Transformer ditches recurrence entirely, relying entirely on self-attention mechanisms." },
-  { start: 58, time: "00:58", text: "This allows models to be significantly more parallelizable and require less training time." },
-  { start: 85, time: "01:25", text: "Multi-Head Attention enables attending to information from different representation subspaces." },
-  { start: 112, time: "01:52", text: "In conclusion, scaled dot-product attention fundamentally unlocked the LLM era." }
-];
-
 export default function App() {
   const [activeTab, setActiveTab] = useState('notes');
   const [activeTool, setActiveTool] = useState('summarize');
   
-  const [videoUrl, setVideoUrl] = useState('https://youtu.be/VQeI71B5ccM');
-  const [videoId, setVideoId] = useState('VQeI71B5ccM');
-  const [transcript, setTranscript] = useState(INITIAL_TRANSCRIPT);
+  const [videoUrl, setVideoUrl] = useState('https://youtu.be/Cb46_P12bMY');
+  const [videoId, setVideoId] = useState('Cb46_P12bMY');
+  const [videoTitle, setVideoTitle] = useState('Introduction to Compiler Design | Language Processing System');
   const [isFetching, setIsFetching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const [summaryData, setSummaryData] = useState({
-    title: "Attention as the Core Foundation",
-    summary: "The presented material eliminates recurrence and convolutions in sequence transduction tasks, demonstrating that simple scaled dot-product attention paired with multi-head transformations provides superior generalization with minimal training cost.",
+  // Dynamic Workspace Data
+  const [studyData, setStudyData] = useState({
+    title: "Introduction to Compiler Design | Language Processing System",
+    summary: "A compiler translates high-level source code into target machine code. The language processing system connects preprocessors, compilers, assemblers, linkers, and loaders into an integrated pipeline.",
     takeaways: [
-      "Quadratic compute complexity O(N²) occurs due to token-to-token all-pairs dot products.",
-      "Parallel processing across sequence dimensions replaces sequential forward-propagation bottlenecks.",
-      "Multi-head projections allow models to jointly resolve syntax, grammar, and semantics in disparate subspaces."
+      "Preprocessor handles macro expansion and header inclusion before compilation.",
+      "The Compiler parses high-level language into assembly code.",
+      "The Assembler translates assembly mnemonics into relocatable machine code.",
+      "The Linker binds object files and libraries, and the Loader loads the executable into memory."
+    ],
+    branches: ["Preprocessor (HLL)", "Compiler & Assembler", "Linker & Loader (Exec)"],
+    slides: [
+      {
+        title: "Language Processing System",
+        bullets: ["Source code enters the Preprocessor", "Compiler transforms code into Assembly", "Assembler emits relocatable Machine Code"],
+        notes: "Explain each stage in the execution hierarchy from high-level language down to binary."
+      },
+      {
+        title: "Linker and Loader",
+        bullets: ["Linker resolves external symbols across libraries", "Loader allocates runtime memory addresses", "Execution begins on the CPU"],
+        notes: "Emphasize how relocatable addresses are mapped to physical memory by the OS loader."
+      }
+    ],
+    audioScript: [
+      { speaker: "Host Alex", text: "Welcome to this study breakdown of the Language Processing System." },
+      { speaker: "Dr. Jordan", text: "Notice how high-level code passes sequentially through the preprocessor, compiler, assembler, linker, and loader." },
+      { speaker: "Host Alex", text: "Right, each stage transforms the program into a lower representation closer to the CPU." }
+    ],
+    quiz: {
+      prompt: "Which component of the Language Processing System is responsible for resolving external library symbols and combining object modules?",
+      options: ["Compiler", "Linker", "Preprocessor", "Assembler"],
+      answer: 1
+    },
+    flashcards: [
+      { q: "What does the Preprocessor do?", a: "Expands macros, handles file inclusions (#include), and removes comments before compilation." },
+      { q: "What is the difference between a Compiler and an Assembler?", a: "A compiler converts high-level code to assembly; an assembler converts assembly to relocatable machine code." }
     ]
   });
+
+  const [transcript, setTranscript] = useState([
+    { start: 0, time: "00:00", text: "Welcome to this technical breakdown of Compiler Design and Language Processing Systems." },
+    { start: 12, time: "00:12", text: "We analyze high-level language conversion through preprocessors, compilers, assemblers, linkers, and loaders." },
+    { start: 30, time: "00:30", text: "The preprocessor resolves source directives and header inclusions prior to parsing." },
+    { start: 55, time: "00:55", text: "The compiler then outputs assembly mnemonics for target hardware." },
+    { start: 85, time: "01:25", text: "Finally, object files are linked and loaded into memory for program execution." }
+  ]);
 
   const [showShareModal, setShowShareModal] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const [chatMessages, setChatMessages] = useState([
-    { role: 'assistant', text: 'Hello! I am your study co-pilot. Ask me anything about this video or document.' }
+    { role: 'assistant', text: 'Hello! I am your AI study copilot. Ask me anything about Compiler Design or your active video.' }
   ]);
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
@@ -61,6 +89,7 @@ export default function App() {
     setIsFetching(true);
 
     try {
+      // 1. Fetch Video Metadata & Subtitles
       const res = await fetch('/api/transcript', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -68,7 +97,10 @@ export default function App() {
       });
       const data = await res.json();
 
-      let parsedTranscript = INITIAL_TRANSCRIPT;
+      let activeTitle = data.videoTitle || "Technical Video Notes";
+      setVideoTitle(activeTitle);
+
+      let parsedTranscript = [];
       if (data.transcript && data.transcript.length > 0) {
         parsedTranscript = data.transcript.map(item => {
           const totalSec = Math.floor(item.start);
@@ -83,13 +115,40 @@ export default function App() {
         setTranscript(parsedTranscript);
       }
 
+      // 2. Request Gemini to generate comprehensive notes for all 8 tools
       const fullText = parsedTranscript.map(t => t.text).join(' ');
+      const aiPrompt = `Topic: "${activeTitle}". Video Transcript/Context: "${fullText.slice(0, 5000)}".
+Generate a complete, structured study package in valid JSON with these exact keys:
+{
+  "summary": "2-3 sentence executive overview of ${activeTitle}",
+  "takeaways": ["4 distinct bullet points covering key mechanisms"],
+  "branches": ["3 core conceptual branch topics for a mindmap"],
+  "slides": [
+    {"title": "Slide 1 Title", "bullets": ["Point 1", "Point 2", "Point 3"], "notes": "Speaker notes"},
+    {"title": "Slide 2 Title", "bullets": ["Point 1", "Point 2", "Point 3"], "notes": "Speaker notes"}
+  ],
+  "audioScript": [
+    {"speaker": "Host Alex", "text": "Hook welcoming listeners to ${activeTitle}"},
+    {"speaker": "Dr. Jordan", "text": "Technical insight on how it works"},
+    {"speaker": "Host Alex", "text": "Takeaway wrap-up"}
+  ],
+  "quiz": {
+    "prompt": "Conceptual question about ${activeTitle}",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "answer": 1
+  },
+  "flashcards": [
+    {"q": "Important question 1", "a": "Clear answer 1"},
+    {"q": "Important question 2", "a": "Clear answer 2"}
+  ]
+}`;
+
       const aiRes = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: `Analyze this video transcript and return a structured summary:\n\n${fullText.slice(0, 8000)}`,
-          systemInstruction: `Return a valid JSON object matching: {"title": "Short Title", "summary": "2-3 sentence overview", "takeaways": ["Point 1", "Point 2", "Point 3"]}`,
+          prompt: aiPrompt,
+          systemInstruction: "You are an expert AI tutor. Output strictly valid JSON matching the schema.",
           jsonMode: true
         })
       });
@@ -98,18 +157,28 @@ export default function App() {
       if (aiData.text) {
         try {
           const parsed = JSON.parse(aiData.text);
-          setSummaryData({
-            title: parsed.title || "Video Overview",
-            summary: parsed.summary || "Summary generated from video transcript.",
-            takeaways: parsed.takeaways || []
+          setStudyData({
+            title: activeTitle,
+            summary: parsed.summary || `Analysis of ${activeTitle}`,
+            takeaways: parsed.takeaways || ["Core conceptual mechanics", "Execution pipeline flow"],
+            branches: parsed.branches || ["Foundations", "Architecture", "Runtime Execution"],
+            slides: parsed.slides || studyData.slides,
+            audioScript: parsed.audioScript || studyData.audioScript,
+            quiz: parsed.quiz || studyData.quiz,
+            flashcards: parsed.flashcards || studyData.flashcards
           });
-        } catch {
-          // Keep default if json parse is not needed
+        } catch (jsonErr) {
+          console.warn("JSON parse fallback", jsonErr);
         }
       }
+
+      setChatMessages([
+        { role: 'assistant', text: `I have analyzed "${activeTitle}". Ask me any questions about this lecture!` }
+      ]);
+
     } catch (err) {
       console.error(err);
-      alert("Unable to fetch transcript from this video. Ensure captions are available.");
+      alert("Error fetching video data. Check your connection or API key.");
     } finally {
       setIsFetching(false);
     }
@@ -124,9 +193,9 @@ export default function App() {
   const handleNewSession = () => {
     if (window.confirm("Start a new workspace session? Active states will be reset.")) {
       setTranscript([
-        { start: 0, time: "00:00", text: "New document/video loaded. Paste your notes or subtitles." }
+        { start: 0, time: "00:00", text: "New workspace ready. Paste a video URL to begin." }
       ]);
-      setChatMessages([{ role: 'assistant', text: 'Workspace reset. How can I help you with your new material?' }]);
+      setChatMessages([{ role: 'assistant', text: 'Workspace reset. Paste a URL or ask any question.' }]);
       setActiveTool('summarize');
     }
   };
@@ -145,17 +214,17 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: `Context:\n${transcript.map(t => t.text).join(' ')}\n\nQuestion: ${userMsg}`,
-          systemInstruction: "You are an expert AI tutor. Answer questions accurately based on the provided material context."
+          prompt: `Context Topic: ${videoTitle}\nTranscript & Notes: ${transcript.map(t => t.text).join(' ')}\n\nUser Question: ${userMsg}`,
+          systemInstruction: "You are an expert tutor. Provide accurate, helpful answers based on the topic and notes."
         })
       });
       const data = await res.json();
-      const reply = data.text || "Attention layers compute dynamic weights across all token pairs concurrently.";
+      const reply = data.text || "In the language processing pipeline, each stage transforms code into lower-level representations culminating in machine execution.";
       setChatMessages(prev => [...prev, { role: 'assistant', text: reply }]);
     } catch {
       setChatMessages(prev => [...prev, {
         role: 'assistant',
-        text: 'Self-attention computes context globally via dynamic Query, Key, and Value vectors.'
+        text: 'The preprocessor expands macros, the compiler generates assembly, the assembler creates object code, and the linker/loader preps execution.'
       }]);
     } finally {
       setIsChatLoading(false);
@@ -215,7 +284,7 @@ export default function App() {
       {/* ── MAIN WORKSPACE ── */}
       <div className="flex-1 flex overflow-hidden">
         
-        {/* LEFT COLUMN: Real YouTube Player & Transcript */}
+        {/* LEFT COLUMN: Player & Transcript */}
         <div className="w-1/2 border-r border-slate-800 flex flex-col bg-slate-950/60">
           <div className="p-3 border-b border-slate-800 flex gap-2 bg-slate-900/40">
             <input 
@@ -223,7 +292,7 @@ export default function App() {
               value={videoUrl}
               onChange={(e) => setVideoUrl(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleFetch()}
-              placeholder="Paste YouTube or video URL..."
+              placeholder="Paste YouTube video URL..."
               className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
             />
             <button 
@@ -418,15 +487,55 @@ export default function App() {
                 </button>
               </div>
 
+              {/* 8 DYNAMIC PANELS */}
               <div className="flex-1 overflow-y-auto">
-                {activeTool === 'summarize' && <SummarizePanel summaryData={summaryData} />}
-                {activeTool === 'mindmap' && <MindMapPanel title={summaryData.title} />}
-                {activeTool === 'infographic' && <InfographicPanel title={summaryData.title} />}
-                {activeTool === 'slides' && <SlidesPanel summaryData={summaryData} />}
-                {activeTool === 'audio' && <AudioPanel summaryData={summaryData} />}
-                {activeTool === 'quiz' && <QuizPanel />}
-                {activeTool === 'flashcards' && <FlashcardsPanel />}
-                {activeTool === 'agent' && <AgentPanel />}
+                {activeTool === 'summarize' && (
+                  <div className="p-4 space-y-4">
+                    <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-2">
+                      <span className="text-[10px] uppercase font-bold text-cyan-400 tracking-wider">Executive Summary</span>
+                      <h3 className="text-sm font-semibold text-slate-100">{studyData.title}</h3>
+                      <p className="text-xs text-slate-400 leading-relaxed">{studyData.summary}</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider block">Key Takeaways</span>
+                      {studyData.takeaways.map((pt, i) => (
+                        <div key={i} className="flex items-start gap-2 text-xs text-slate-300 bg-slate-900/60 border border-slate-800/80 p-2.5 rounded-lg">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-1.5 flex-shrink-0" />
+                          <span>{pt}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {activeTool === 'mindmap' && (
+                  <MindMapPanel title={studyData.title} branches={studyData.branches} />
+                )}
+
+                {activeTool === 'infographic' && (
+                  <InfographicPanel title={studyData.title} summary={studyData.summary} />
+                )}
+
+                {activeTool === 'slides' && (
+                  <SlidesPanel slides={studyData.slides} />
+                )}
+
+                {activeTool === 'audio' && (
+                  <AudioPanel script={studyData.audioScript} />
+                )}
+
+                {activeTool === 'quiz' && (
+                  <QuizPanel quiz={studyData.quiz} />
+                )}
+
+                {activeTool === 'flashcards' && (
+                  <FlashcardsPanel cards={studyData.flashcards} />
+                )}
+
+                {activeTool === 'agent' && (
+                  <AgentPanel title={studyData.title} />
+                )}
               </div>
             </div>
           )}
@@ -435,17 +544,8 @@ export default function App() {
             <div className="flex-1 flex flex-col overflow-hidden">
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
                 {chatMessages.map((m, idx) => (
-                  <div 
-                    key={idx} 
-                    className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}
-                  >
-                    <div 
-                      className={
-                        m.role === 'user' 
-                          ? 'max-w-[85%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed bg-cyan-600 text-white rounded-tr-none' 
-                          : 'max-w-[85%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none'
-                      }
-                    >
+                  <div key={idx} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+                    <div className={m.role === 'user' ? 'max-w-[85%] rounded-2xl px-4 py-2.5 text-xs bg-cyan-600 text-white rounded-tr-none' : 'max-w-[85%] rounded-2xl px-4 py-2.5 text-xs bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none'}>
                       {m.text}
                     </div>
                   </div>
@@ -454,7 +554,7 @@ export default function App() {
                   <div className="flex justify-start">
                     <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-tl-none px-4 py-2 text-xs text-slate-400 flex items-center gap-2">
                       <RefreshCw className="w-3 h-3 animate-spin text-cyan-400" />
-                      Synthesizing response...
+                      Analyzing lecture notes...
                     </div>
                   </div>
                 )}
@@ -465,14 +565,10 @@ export default function App() {
                   type="text" 
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Ask a question about the active video context..."
+                  placeholder={`Ask about ${videoTitle.slice(0, 30)}...`}
                   className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
                 />
-                <button 
-                  type="submit" 
-                  disabled={isChatLoading || !chatInput.trim()}
-                  className="p-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg disabled:opacity-40 transition-colors"
-                >
+                <button type="submit" disabled={isChatLoading || !chatInput.trim()} className="p-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg disabled:opacity-40 transition-colors">
                   <Send className="w-4 h-4" />
                 </button>
               </form>
@@ -494,19 +590,9 @@ export default function App() {
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-xs text-slate-400">
-              Shareable link for this video and study workspace.
-            </p>
             <div className="flex gap-2">
-              <input 
-                readOnly 
-                value={window.location.href}
-                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 font-mono"
-              />
-              <button 
-                onClick={() => handleCopy(window.location.href)}
-                className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold"
-              >
+              <input readOnly value={window.location.href} className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 font-mono" />
+              <button onClick={() => handleCopy(window.location.href)} className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold">
                 {copied ? 'Copied!' : 'Copy'}
               </button>
             </div>
@@ -526,37 +612,9 @@ export default function App() {
                 <X className="w-4 h-4" />
               </button>
             </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-slate-950/60 border border-slate-800 p-4 rounded-xl space-y-2">
-                <div className="text-xs font-semibold text-slate-400">Free Tier</div>
-                <div className="text-xl font-bold text-slate-100">$0</div>
-                <ul className="text-[11px] text-slate-400 space-y-1.5 pt-2">
-                  <li>• 20 video summaries / mo</li>
-                  <li>• 500 Flashcards storage</li>
-                  <li>• Standard speech synthesis</li>
-                </ul>
-              </div>
-
-              <div className="bg-amber-950/20 border border-amber-500/40 p-4 rounded-xl space-y-2 relative">
-                <span className="absolute -top-2.5 right-3 text-[9px] bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full font-bold uppercase">
-                  Popular
-                </span>
-                <div className="text-xs font-semibold text-amber-400">Pro Unlimited</div>
-                <div className="text-xl font-bold text-white">$9.99 <span className="text-xs font-normal text-slate-400">/mo</span></div>
-                <ul className="text-[11px] text-slate-300 space-y-1.5 pt-2">
-                  <li>• Unlimited YouTube parsing</li>
-                  <li>• Autonomous AI Agent reasoning</li>
-                  <li>• Neural studio voices</li>
-                </ul>
-              </div>
-            </div>
-
-            <button 
-              onClick={() => { alert('Stripe checkout triggers here.'); setShowUpgradeModal(false); }}
-              className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold text-xs rounded-xl shadow-md transition-all"
-            >
-              Continue with Pro
+            <p className="text-xs text-slate-300">Enjoy unlimited transcript processing, high-fidelity AI agents, and neural podcast audio synthesis.</p>
+            <button onClick={() => setShowUpgradeModal(false)} className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-bold text-xs rounded-xl">
+              Dismiss
             </button>
           </div>
         </div>
@@ -566,36 +624,14 @@ export default function App() {
   );
 }
 
-// ── SUB-PANELS ──
+// ── REUSABLE SUB-PANEL COMPONENTS ──
 
-function SummarizePanel({ summaryData }) {
-  return (
-    <div className="p-4 space-y-4">
-      <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-2">
-        <span className="text-[10px] uppercase font-bold text-cyan-400 tracking-wider">Executive Summary</span>
-        <h3 className="text-sm font-semibold text-slate-100">{summaryData.title}</h3>
-        <p className="text-xs text-slate-400 leading-relaxed">{summaryData.summary}</p>
-      </div>
-
-      <div className="space-y-2">
-        <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider block">Key Takeaways</span>
-        {summaryData.takeaways.map((pt, i) => (
-          <div key={i} className="flex items-start gap-2 text-xs text-slate-300 bg-slate-900/60 border border-slate-800/80 p-2.5 rounded-lg">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-1.5 flex-shrink-0" />
-            <span>{pt}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MindMapPanel({ title }) {
+function MindMapPanel({ title, branches }) {
   const [zoom, setZoom] = useState(1);
   return (
     <div className="p-4 flex flex-col h-full space-y-3">
       <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-        <span className="text-xs font-semibold text-slate-300">Concept Map: {title}</span>
+        <span className="text-xs font-semibold text-slate-300">Concept Map</span>
         <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded p-0.5 text-xs">
           <button onClick={() => setZoom(z => Math.max(0.7, z - 0.1))} className="px-2 py-0.5 hover:text-white">-</button>
           <span className="px-1 text-[10px] text-slate-400">{Math.round(zoom * 100)}%</span>
@@ -605,28 +641,18 @@ function MindMapPanel({ title }) {
 
       <div className="flex-1 bg-slate-900/40 border border-slate-800 rounded-xl p-4 overflow-auto flex items-center justify-center min-h-[280px]">
         <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center' }} className="flex items-center gap-8 transition-transform">
-          <div className="bg-cyan-950 border border-cyan-500/80 text-cyan-200 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg max-w-[140px] text-center">
-            {title}
+          <div className="bg-cyan-950 border border-cyan-500/80 text-cyan-200 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg max-w-[150px] text-center">
+            {title.slice(0, 32)}
           </div>
           <div className="space-y-4">
-            <div className="flex items-center gap-4">
-              <div className="w-6 h-px bg-slate-700" />
-              <div className="bg-slate-900 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs">
-                Foundations & Inputs
+            {branches.map((b, i) => (
+              <div key={i} className="flex items-center gap-4">
+                <div className="w-6 h-px bg-slate-700" />
+                <div className="bg-slate-900 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs">
+                  {b}
+                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="w-6 h-px bg-slate-700" />
-              <div className="bg-slate-900 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs">
-                Core Transformations
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="w-6 h-px bg-slate-700" />
-              <div className="bg-slate-900 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs">
-                Outputs & Takeaways
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       </div>
@@ -634,11 +660,11 @@ function MindMapPanel({ title }) {
   );
 }
 
-function InfographicPanel({ title }) {
+function InfographicPanel({ title, summary }) {
   const cards = [
-    { title: "Subject Focus", content: title, badge: "Topic", metric: "Key" },
-    { title: "Processing Method", content: "Extracted timed text segments vectorized for LLM synthesis.", badge: "Pipeline", metric: "Direct" },
-    { title: "Key Insight", content: "Algorithmic synthesis isolates critical concepts from lecture dialogue.", badge: "Core", metric: "100%" }
+    { title: "Core Subject", content: title, badge: "Topic", metric: "Active" },
+    { title: "Processing Flow", content: summary.slice(0, 110) + "...", badge: "Overview", metric: "100%" },
+    { title: "Architecture", content: "Transforms high-level source instructions into executable binary instructions.", badge: "Goal", metric: "Pipeline" }
   ];
 
   return (
@@ -648,10 +674,8 @@ function InfographicPanel({ title }) {
           <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
             <div>
               <div className="flex justify-between items-start mb-2">
-                <span className="text-[9px] font-bold uppercase bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded">
-                  {c.badge}
-                </span>
-                <span className="text-base font-bold text-emerald-400">{c.metric}</span>
+                <span className="text-[9px] font-bold uppercase bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded">{c.badge}</span>
+                <span className="text-sm font-bold text-emerald-400">{c.metric}</span>
               </div>
               <h4 className="text-xs font-medium text-slate-100 mb-1">{c.title}</h4>
               <p className="text-[11px] text-slate-400">{c.content}</p>
@@ -663,28 +687,17 @@ function InfographicPanel({ title }) {
   );
 }
 
-function SlidesPanel({ summaryData }) {
+function SlidesPanel({ slides }) {
   const [slide, setSlide] = useState(0);
-  const slides = [
-    {
-      title: summaryData.title,
-      bullets: summaryData.takeaways.slice(0, 3),
-      notes: "High-level takeaway slide generated from the video transcript."
-    },
-    {
-      title: "Core Mechanics",
-      bullets: ["Structured knowledge extraction", "Automated multi-subspace indexing", "Timestamped reference alignments"],
-      notes: "Contextual points derived from topic analysis."
-    }
-  ];
+  const activeSlide = slides[slide] || slides[0];
 
   return (
     <div className="p-4 space-y-3">
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 min-h-[200px] flex flex-col justify-between">
         <div>
-          <h3 className="text-sm font-bold text-slate-100 mb-3">{slides[slide].title}</h3>
+          <h3 className="text-sm font-bold text-slate-100 mb-3">{activeSlide.title}</h3>
           <ul className="space-y-1.5">
-            {slides[slide].bullets.map((b, i) => (
+            {activeSlide.bullets.map((b, i) => (
               <li key={i} className="text-xs text-slate-300 flex items-start gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-orange-400 mt-1.5 flex-shrink-0" />
                 <span>{b}</span>
@@ -693,24 +706,16 @@ function SlidesPanel({ summaryData }) {
           </ul>
         </div>
         <div className="mt-4 pt-2 border-t border-slate-800 text-[11px] text-slate-400 italic">
-          Notes: {slides[slide].notes}
+          Speaker Notes: {activeSlide.notes}
         </div>
       </div>
 
       <div className="flex justify-between items-center text-xs">
-        <button 
-          onClick={() => setSlide(s => Math.max(0, s - 1))}
-          disabled={slide === 0}
-          className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300 disabled:opacity-30"
-        >
+        <button onClick={() => setSlide(s => Math.max(0, s - 1))} disabled={slide === 0} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300 disabled:opacity-30">
           Previous
         </button>
         <span className="text-slate-500 font-mono text-[11px]">Slide {slide + 1} of {slides.length}</span>
-        <button 
-          onClick={() => setSlide(s => Math.min(slides.length - 1, s + 1))}
-          disabled={slide === slides.length - 1}
-          className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300 disabled:opacity-30"
-        >
+        <button onClick={() => setSlide(s => Math.min(slides.length - 1, s + 1))} disabled={slide === slides.length - 1} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300 disabled:opacity-30">
           Next
         </button>
       </div>
@@ -718,15 +723,9 @@ function SlidesPanel({ summaryData }) {
   );
 }
 
-function AudioPanel({ summaryData }) {
+function AudioPanel({ script }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentLine, setCurrentLine] = useState(0);
-
-  const script = [
-    { speaker: "Host Alex", text: `Welcome to our overview of ${summaryData.title}.` },
-    { speaker: "Dr. Jordan", text: summaryData.summary },
-    { speaker: "Host Alex", text: summaryData.takeaways[0] || "That wraps up our key takeaway." }
-  ];
 
   const toggleSpeech = () => {
     if (!('speechSynthesis' in window)) {
@@ -766,11 +765,8 @@ function AudioPanel({ summaryData }) {
   return (
     <div className="p-4 space-y-3">
       <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-        <span className="text-xs font-semibold text-slate-300">Audio Synthesis</span>
-        <button 
-          onClick={toggleSpeech}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-slate-950 font-bold rounded-lg text-xs"
-        >
+        <span className="text-xs font-semibold text-slate-300">Podcast Dialogue Overview</span>
+        <button onClick={toggleSpeech} className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-slate-950 font-bold rounded-lg text-xs">
           {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
           <span>{isPlaying ? 'Pause' : 'Play Audio'}</span>
         </button>
@@ -778,14 +774,7 @@ function AudioPanel({ summaryData }) {
 
       <div className="space-y-2">
         {script.map((line, idx) => (
-          <div 
-            key={idx} 
-            className={
-              isPlaying && currentLine === idx 
-                ? 'p-3 rounded-xl border text-xs transition-all bg-orange-500/10 border-orange-500/40 text-orange-200' 
-                : 'p-3 rounded-xl border text-xs transition-all bg-slate-900 border-slate-800 text-slate-400'
-            }
-          >
+          <div key={idx} className={isPlaying && currentLine === idx ? 'p-3 rounded-xl border text-xs transition-all bg-orange-500/10 border-orange-500/40 text-orange-200' : 'p-3 rounded-xl border text-xs transition-all bg-slate-900 border-slate-800 text-slate-400'}>
             <div className="font-bold text-[10px] text-slate-300 mb-1">{line.speaker}</div>
             <p>{line.text}</p>
           </div>
@@ -795,39 +784,28 @@ function AudioPanel({ summaryData }) {
   );
 }
 
-function QuizPanel() {
+function QuizPanel({ quiz }) {
   const [selected, setSelected] = useState(null);
   const [submitted, setSubmitted] = useState(false);
-
-  const question = {
-    prompt: "What is the primary role of self-attention in sequential transformers?",
-    options: [
-      "To restrict token relationships strictly to immediate adjacent neighbors",
-      "To dynamically compute all-pairs context weights across arbitrary sequence lengths",
-      "To replace dense projection matrices with convolutional filters",
-      "To force sequential recurrent computation across hidden layers"
-    ],
-    answer: 1
-  };
 
   return (
     <div className="p-4 space-y-4">
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
         <div className="flex justify-between items-center">
           <span className="text-[10px] font-bold uppercase bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded">
-            Question 1 of 1
+            Lecture Quiz
           </span>
-          <span className="text-xs text-slate-400">Score: {submitted && selected === question.answer ? '100%' : '0%'}</span>
+          <span className="text-xs text-slate-400">Score: {submitted && selected === quiz.answer ? '100%' : '0%'}</span>
         </div>
-        <p className="text-xs font-semibold text-slate-100">{question.prompt}</p>
+        <p className="text-xs font-semibold text-slate-100">{quiz.prompt}</p>
 
         <div className="space-y-2 pt-1">
-          {question.options.map((opt, i) => (
+          {quiz.options.map((opt, i) => (
             <button
               key={i}
               onClick={() => !submitted && setSelected(i)}
               className={
-                submitted && i === question.answer
+                submitted && i === quiz.answer
                   ? 'w-full text-left p-3 rounded-lg border text-xs transition-colors bg-emerald-950/80 border-emerald-500 text-emerald-200'
                   : selected === i 
                   ? 'w-full text-left p-3 rounded-lg border text-xs transition-colors bg-cyan-950/60 border-cyan-500 text-white' 
@@ -842,11 +820,7 @@ function QuizPanel() {
           ))}
         </div>
 
-        <button 
-          onClick={() => setSubmitted(true)}
-          disabled={selected === null}
-          className="w-full mt-2 py-2 bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold text-xs rounded-lg disabled:opacity-40 transition-colors"
-        >
+        <button onClick={() => setSubmitted(true)} disabled={selected === null} className="w-full mt-2 py-2 bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold text-xs rounded-lg disabled:opacity-40 transition-colors">
           Check Answer
         </button>
       </div>
@@ -854,14 +828,10 @@ function QuizPanel() {
   );
 }
 
-function FlashcardsPanel() {
+function FlashcardsPanel({ cards }) {
   const [flipped, setFlipped] = useState(false);
   const [index, setIndex] = useState(0);
-
-  const cards = [
-    { q: "What is Multi-Head Attention?", a: "Projecting Q, K, V with multiple linear layers into parallel subspace representations." },
-    { q: "What is the primary scaling bottleneck in Transformers?", a: "Memory and computation scales quadratically O(N²) with token sequence length." }
-  ];
+  const activeCard = cards[index] || cards[0];
 
   return (
     <div className="p-4 space-y-4">
@@ -870,29 +840,20 @@ function FlashcardsPanel() {
         <span>{index + 1} of {cards.length}</span>
       </div>
 
-      <div 
-        onClick={() => setFlipped(!flipped)}
-        className="h-44 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer shadow-lg transition-all"
-      >
+      <div onClick={() => setFlipped(!flipped)} className="h-44 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer shadow-lg transition-all">
         <span className="text-[10px] uppercase font-bold text-slate-500 mb-2">
           {flipped ? 'Answer' : 'Question (Click to flip)'}
         </span>
         <p className="text-xs font-medium text-slate-100 max-w-sm">
-          {flipped ? cards[index].a : cards[index].q}
+          {flipped ? activeCard.a : activeCard.q}
         </p>
       </div>
 
       <div className="flex gap-2">
-        <button 
-          onClick={() => { setFlipped(false); setIndex((index + 1) % cards.length); }}
-          className="flex-1 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 rounded-lg text-xs font-semibold"
-        >
+        <button onClick={() => { setFlipped(false); setIndex((index + 1) % cards.length); }} className="flex-1 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 rounded-lg text-xs font-semibold">
           Need Review
         </button>
-        <button 
-          onClick={() => { setFlipped(false); setIndex((index + 1) % cards.length); }}
-          className="flex-1 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 rounded-lg text-xs font-semibold"
-        >
+        <button onClick={() => { setFlipped(false); setIndex((index + 1) % cards.length); }} className="flex-1 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 rounded-lg text-xs font-semibold">
           Mastered
         </button>
       </div>
@@ -900,11 +861,11 @@ function FlashcardsPanel() {
   );
 }
 
-function AgentPanel() {
+function AgentPanel({ title }) {
   const steps = [
-    { status: 'done', text: 'Scraped transcript tokens & extracted primary claims' },
-    { status: 'done', text: 'Cross-referenced query formulations with research literature' },
-    { status: 'active', text: 'Drafting synthesis report with verifiable timestamped citations' }
+    { status: 'done', text: `Extracted syllabus outline for: ${title.slice(0, 35)}...` },
+    { status: 'done', text: 'Cross-checked system stages: Preprocessor → Compiler → Assembler → Linker → Loader' },
+    { status: 'active', text: 'Synthesizing verified exam study notes and topic hierarchy' }
   ];
 
   return (
@@ -919,11 +880,7 @@ function AgentPanel() {
       <div className="space-y-2">
         {steps.map((st, i) => (
           <div key={i} className="flex items-center gap-3 p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs">
-            {st.status === 'done' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-            ) : (
-              <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin flex-shrink-0" />
-            )}
+            {st.status === 'done' ? <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" /> : <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin flex-shrink-0" />}
             <span className={st.status === 'done' ? 'text-slate-300' : 'text-slate-100 font-medium'}>
               {st.text}
             </span>
