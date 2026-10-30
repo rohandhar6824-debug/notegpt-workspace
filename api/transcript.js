@@ -12,26 +12,26 @@ export default async function handler(req, res) {
   const videoId = videoIdMatch ? videoIdMatch[1] : null;
 
   if (!videoId) {
-    return res.status(400).json({ error: 'Invalid YouTube URL provided.' });
+    return res.status(400).json({ error: 'Invalid YouTube URL' });
   }
 
-  let videoTitle = "YouTube Video";
-  let authorName = "Creator";
-  let description = "";
+  let videoTitle = '';
+  let authorName = '';
+  let description = '';
 
-  // 1. Fetch official title & author via YouTube oEmbed
+  // 1. Fetch official title & channel name via Noembed / YouTube oEmbed
   try {
-    const oembedRes = await fetch(`[https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=$](https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=$){videoId}&format=json`);
+    const oembedRes = await fetch(`[https://noembed.com/embed?url=https://www.youtube.com/watch?v=$](https://noembed.com/embed?url=https://www.youtube.com/watch?v=$){videoId}`);
     if (oembedRes.ok) {
       const oembedData = await oembedRes.json();
-      videoTitle = oembedData.title || videoTitle;
-      authorName = oembedData.author_name || authorName;
+      videoTitle = oembedData.title || '';
+      authorName = oembedData.author_name || '';
     }
   } catch (e) {
-    console.warn("oEmbed error:", e);
+    console.warn('oEmbed failed:', e);
   }
 
-  // 2. Fetch page metadata & attempt caption extraction
+  // 2. Attempt YouTube InnerTube & Watch Page Caption Extraction
   try {
     const watchRes = await fetch(`[https://www.youtube.com/watch?v=$](https://www.youtube.com/watch?v=$){videoId}`, {
       headers: {
@@ -41,13 +41,18 @@ export default async function handler(req, res) {
     });
     const html = await watchRes.text();
 
+    if (!videoTitle) {
+      const titleMatch = html.match(/<title>(.*?) - YouTube<\/title>/);
+      if (titleMatch?.[1]) videoTitle = titleMatch[1];
+    }
+
     const descMatch = html.match(/"shortDescription":"((?:[^"\\]|\\.)*)"/);
-    if (descMatch && descMatch[1]) {
+    if (descMatch?.[1]) {
       description = descMatch[1].replace(/\\n/g, ' ').replace(/\\"/g, '"').slice(0, 1500);
     }
 
     const captionMatch = html.match(/"captionTracks":(\[.*?\])/);
-    if (captionMatch && captionMatch[1]) {
+    if (captionMatch?.[1]) {
       const tracks = JSON.parse(captionMatch[1]);
       const enTrack = tracks.find(t => t.languageCode?.startsWith('en')) || tracks[0];
       if (enTrack?.baseUrl) {
@@ -72,8 +77,8 @@ export default async function handler(req, res) {
         if (transcript.length > 0) {
           return res.status(200).json({
             videoId,
-            videoTitle,
-            authorName,
+            videoTitle: videoTitle || `YouTube Video (${videoId})`,
+            authorName: authorName || 'YouTube Creator',
             description,
             hasRealCaptions: true,
             transcript
@@ -82,14 +87,13 @@ export default async function handler(req, res) {
       }
     }
   } catch (e) {
-    console.warn("Caption scrape fallback:", e);
+    console.warn('Watch page scrape fallback:', e);
   }
 
-  // Return metadata so Gemini can generate topic-accurate timestamped notes & study tools
   return res.status(200).json({
     videoId,
-    videoTitle,
-    authorName,
+    videoTitle: videoTitle || `YouTube Video (${videoId})`,
+    authorName: authorName || 'YouTube Creator',
     description,
     hasRealCaptions: false,
     transcript: []

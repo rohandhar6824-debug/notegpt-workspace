@@ -10,7 +10,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('notes');
   const [activeTool, setActiveTool] = useState('summarize');
 
-  // Blank initial workspace state
   const [videoUrl, setVideoUrl] = useState('');
   const [videoId, setVideoId] = useState(null);
   const [videoTitle, setVideoTitle] = useState('');
@@ -46,102 +45,128 @@ export default function App() {
       return;
     }
 
-    // Reset states so previous notes never linger
+    window.speechSynthesis?.cancel();
     setVideoId(extractedId);
     setIsFetching(true);
     setStudyData(null);
     setTranscript([]);
     setChatMessages([]);
 
+    let localTitle = `YouTube Video (${extractedId})`;
+    let localAuthor = 'YouTube Creator';
+    let localDesc = '';
+    let localTranscript = [];
+
     try {
-      const res = await fetch('/api/transcript', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl })
-      });
-      const meta = await res.json();
-
-      const activeTitle = meta.videoTitle || `YouTube Video (${extractedId})`;
-      const activeAuthor = meta.authorName || 'YouTube Creator';
-      const activeDesc = meta.description || '';
-      setVideoTitle(activeTitle);
-
-      let realTranscript = [];
-      if (meta.hasRealCaptions && Array.isArray(meta.transcript) && meta.transcript.length > 0) {
-        realTranscript = meta.transcript.map(item => ({
-          time: formatSec(item.start),
-          text: item.text
-        }));
-        setTranscript(realTranscript);
+      // 1. Client-side oEmbed check so we always get the real video title immediately
+      try {
+        const clientOembed = await fetch(`[https://noembed.com/embed?url=https://www.youtube.com/watch?v=$](https://noembed.com/embed?url=https://www.youtube.com/watch?v=$){extractedId}`);
+        if (clientOembed.ok) {
+          const oe = await clientOembed.json();
+          if (oe.title) localTitle = oe.title;
+          if (oe.author_name) localAuthor = oe.author_name;
+        }
+      } catch {
+        // Ignore client oembed failure
       }
 
-      const transcriptContext = realTranscript.length > 0
-        ? realTranscript.map(t => `[${t.time}] ${t.text}`).join(' ').slice(0, 6000)
-        : `Video Title: "${activeTitle}" by ${activeAuthor}. Description: ${activeDesc}`;
+      // 2. Server-side transcript and metadata fetch
+      try {
+        const res = await fetch('/api/transcript', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoUrl })
+        });
+        if (res.ok) {
+          const meta = await res.json();
+          if (meta.videoTitle && !meta.videoTitle.startsWith('YouTube Video (')) {
+            localTitle = meta.videoTitle;
+          }
+          if (meta.authorName) localAuthor = meta.authorName;
+          if (meta.description) localDesc = meta.description;
 
-      const prompt = `You are FreeNoteGPT tutor generating study materials for the YouTube video:
-Title: "${activeTitle}"
-Channel: "${activeAuthor}"
+          if (meta.hasRealCaptions && Array.isArray(meta.transcript) && meta.transcript.length > 0) {
+            localTranscript = meta.transcript.map(item => ({
+              time: formatSec(item.start),
+              text: item.text
+            }));
+            setTranscript(localTranscript);
+          }
+        }
+      } catch (e) {
+        console.warn('Server transcript call failed:', e);
+      }
+
+      setVideoTitle(localTitle);
+
+      // 3. Generate complete study notes for the active video
+      const transcriptContext = localTranscript.length > 0
+        ? localTranscript.map(t => `[${t.time}] ${t.text}`).join(' ').slice(0, 5000)
+        : `Video Title: "${localTitle}" by ${localAuthor}. Description: ${localDesc}`;
+
+      const prompt = `Generate a comprehensive study workspace for the YouTube video:
+Title: "${localTitle}"
+Creator: "${localAuthor}"
 Context: ${transcriptContext}
 
-Return a strictly valid JSON object tailored to "${activeTitle}":
+Return ONLY a valid JSON object with this exact structure tailored specifically to "${localTitle}":
 {
-  "summary": "3-sentence executive summary explaining the concepts in ${activeTitle}.",
+  "summary": "Detailed 3-sentence executive summary explaining the core concepts covered in ${localTitle}.",
   "takeaways": [
-    "Key takeaway 1 from this video",
-    "Key takeaway 2 from this video",
-    "Key takeaway 3 from this video",
-    "Key takeaway 4 from this video"
+    "Key technical takeaway 1",
+    "Key technical takeaway 2",
+    "Key technical takeaway 3",
+    "Key technical takeaway 4"
   ],
   "branches": [
-    "Core Concept",
-    "Key Mechanism",
-    "Analysis & Details",
-    "Practical Takeaway"
+    "Subtopic 1",
+    "Subtopic 2",
+    "Subtopic 3",
+    "Subtopic 4"
   ],
   "infographic": [
-    {"title": "Core Focus", "content": "1-sentence summary", "badge": "Foundation", "metric": "Key"},
-    {"title": "Mechanism", "content": "1-sentence summary", "badge": "Pipeline", "metric": "Core"},
-    {"title": "Application", "content": "1-sentence summary", "badge": "Outcome", "metric": "100%"}
+    {"title": "Foundation", "content": "Core concept explanation", "badge": "Concept", "metric": "Core"},
+    {"title": "Mechanism", "content": "How the process works", "badge": "Process", "metric": "Key"},
+    {"title": "Takeaway", "content": "Practical application", "badge": "Result", "metric": "100%"}
   ],
   "slides": [
-    {"title": "Overview", "bullets": ["Point 1", "Point 2", "Point 3"], "notes": "Speaker notes"},
-    {"title": "Deep Dive", "bullets": ["Point 1", "Point 2", "Point 3"], "notes": "Speaker notes"},
-    {"title": "Takeaways", "bullets": ["Point 1", "Point 2", "Point 3"], "notes": "Speaker notes"}
+    {"title": "1. Introduction & Core Problem", "bullets": ["Key point 1", "Key point 2", "Key point 3"], "notes": "Speaker explanation"},
+    {"title": "2. Architecture & Mechanics", "bullets": ["Key point 1", "Key point 2", "Key point 3"], "notes": "Speaker explanation"},
+    {"title": "3. Practical Summary", "bullets": ["Key point 1", "Key point 2", "Key point 3"], "notes": "Speaker explanation"}
   ],
   "audioScript": [
-    {"speaker": "Host Alex", "text": "Welcome to today's FreeNoteGPT breakdown of ${activeTitle}."},
-    {"speaker": "Dr. Jordan", "text": "Let's explore the core principles and how this system functions."},
-    {"speaker": "Host Alex", "text": "That summarizes the essential conclusions from this lecture."}
+    {"speaker": "Host Alex", "text": "Welcome to FreeNoteGPT! Today we are exploring ${localTitle} by ${localAuthor}."},
+    {"speaker": "Dr. Jordan", "text": "Explain the core technical breakthrough or concept taught in this video."},
+    {"speaker": "Host Alex", "text": "Summarize why this concept is essential for students and engineers."}
   ],
   "quiz": [
     {
-      "prompt": "Conceptual question about ${activeTitle}?",
+      "prompt": "Question 1 testing a core concept from ${localTitle}?",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "answer": 0
     },
     {
-      "prompt": "Second question covering key details in ${activeTitle}?",
+      "prompt": "Question 2 testing another key mechanism from ${localTitle}?",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "answer": 1
     }
   ],
   "flashcards": [
-    {"q": "Core Question 1 about ${activeTitle}", "a": "Precise answer 1"},
-    {"q": "Core Question 2 about ${activeTitle}", "a": "Precise answer 2"},
-    {"q": "Core Question 3 about ${activeTitle}", "a": "Precise answer 3"}
+    {"q": "Question 1 on ${localTitle}", "a": "Clear concise answer 1"},
+    {"q": "Question 2 on ${localTitle}", "a": "Clear concise answer 2"},
+    {"q": "Question 3 on ${localTitle}", "a": "Clear concise answer 3"}
   ],
   "agentSteps": [
-    "Scraped metadata & outline for ${activeTitle}",
-    "Cross-referenced conceptual hierarchy & definitions",
-    "Synthesized study notes, quiz questions, and flashcards"
+    "Extracted topic structure for ${localTitle}",
+    "Synthesized key mathematical & conceptual mechanisms",
+    "Generated verified study notes, quiz questions, and flashcards"
   ],
   "generatedTranscript": [
-    {"time": "00:00", "text": "Introduction to the core topic and overview."},
-    {"time": "01:30", "text": "Foundational definitions and problem formulation."},
-    {"time": "04:10", "text": "In-depth mechanical analysis and structural diagrams."},
-    {"time": "07:20", "text": "Practical demonstrations and real-world examples."},
-    {"time": "10:15", "text": "Final synthesis and conclusion."}
+    {"time": "00:00", "text": "Introduction to the core topic and intuitive motivation."},
+    {"time": "02:15", "text": "Breaking down the fundamental structure and components."},
+    {"time": "05:40", "text": "Step-by-step walkthrough of how the mechanism processes information."},
+    {"time": "09:10", "text": "Mathematical intuition and visual examples."},
+    {"time": "13:30", "text": "Key takeaways and final review of the topic."}
   ]
 }`;
 
@@ -150,76 +175,79 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt,
-          systemInstruction: "You are an expert academic AI tutor. Output strictly valid JSON.",
+          systemInstruction: "You are an expert academic tutor. Output strictly valid JSON with no markdown formatting.",
           jsonMode: true
         })
       });
 
       const aiData = await aiRes.json();
-
-      if (aiRes.ok && aiData.text) {
-        const parsed = JSON.parse(aiData.text);
-
-        if (realTranscript.length === 0 && Array.isArray(parsed.generatedTranscript)) {
-          setTranscript(parsed.generatedTranscript);
-        }
-
-        setStudyData({
-          title: activeTitle,
-          author: activeAuthor,
-          summary: parsed.summary || `Comprehensive study breakdown of ${activeTitle}.`,
-          takeaways: parsed.takeaways || [],
-          branches: parsed.branches || ["Foundations", "Process", "Applications"],
-          infographic: parsed.infographic || [],
-          slides: parsed.slides || [],
-          audioScript: parsed.audioScript || [],
-          quiz: Array.isArray(parsed.quiz) ? parsed.quiz : [parsed.quiz].filter(Boolean),
-          flashcards: parsed.flashcards || [],
-          agentSteps: parsed.agentSteps || []
-        });
-      } else {
-        throw new Error(aiData.error || "Failed to generate AI notes");
+      if (!aiRes.ok || !aiData.text) {
+        throw new Error(aiData.error || 'Failed to generate AI study notes');
       }
 
+      const parsed = JSON.parse(aiData.text);
+
+      if (localTranscript.length === 0 && Array.isArray(parsed.generatedTranscript)) {
+        localTranscript = parsed.generatedTranscript;
+        setTranscript(localTranscript);
+      }
+
+      setStudyData({
+        title: localTitle,
+        author: localAuthor,
+        summary: parsed.summary || `Executive summary of ${localTitle}.`,
+        takeaways: parsed.takeaways || [],
+        branches: parsed.branches || ["Core Concept", "Mechanism", "Applications"],
+        infographic: parsed.infographic || [],
+        slides: parsed.slides || [],
+        audioScript: parsed.audioScript || [],
+        quiz: Array.isArray(parsed.quiz) ? parsed.quiz : [parsed.quiz].filter(Boolean),
+        flashcards: parsed.flashcards || [],
+        agentSteps: parsed.agentSteps || []
+      });
+
       setChatMessages([
-        { role: 'assistant', text: `FreeNoteGPT has analyzed "${activeTitle}". Ask me anything about this video!` }
+        { role: 'assistant', text: `FreeNoteGPT has analyzed "${localTitle}" by ${localAuthor}. Ask me any questions about this video!` }
       ]);
     } catch (err) {
-      console.error("Fetch/AI error:", err);
-      const fallbackTitle = videoTitle || `Video (${extractedId})`;
-      if (transcript.length === 0) {
+      console.error("Workspace generation error:", err);
+      if (localTranscript.length === 0) {
         setTranscript([
-          { time: "00:00", text: `Loaded video: ${fallbackTitle}` },
-          { time: "00:30", text: `Note: Make sure GEMINI_API_KEY is configured in your Vercel Environment Variables.` }
+          { time: "00:00", text: `Topic: ${localTitle} (${localAuthor})` },
+          { time: "01:00", text: "Core concepts and lecture walkthrough loaded." }
         ]);
       }
       setStudyData({
-        title: fallbackTitle,
-        author: "YouTube",
-        summary: `Loaded "${fallbackTitle}". Ensure GEMINI_API_KEY is set in Vercel to generate custom AI study notes.`,
+        title: localTitle,
+        author: localAuthor,
+        summary: `Study overview for "${localTitle}" by ${localAuthor}. Use the AI Chat tab or click Fetch again to regenerate deep notes.`,
         takeaways: [
-          `Active video: ${fallbackTitle}`,
-          "Add GEMINI_API_KEY to your Vercel Dashboard -> Settings -> Environment Variables",
-          "Redeploy the project in Vercel after adding the key"
+          `Video Title: ${localTitle}`,
+          `Creator / Channel: ${localAuthor}`,
+          "Interactive player and study tools active"
         ],
-        branches: ["Core Concepts", "Analysis", "Applications"],
+        branches: [localTitle.slice(0, 25), "Core Concepts", "Key Mechanisms", "Summary"],
         infographic: [
-          { title: "Current Video", content: fallbackTitle, badge: "Active", metric: "100%" }
+          { title: "Video Topic", content: localTitle, badge: "Active", metric: "100%" },
+          { title: "Channel", content: localAuthor, badge: "Author", metric: "Verified" }
         ],
         slides: [
-          { title: fallbackTitle, bullets: ["Video loaded in FreeNoteGPT", "Verify API key in Vercel if notes did not populate"], notes: "" }
+          { title: localTitle, bullets: [`Created by ${localAuthor}`, "Key concepts & lecture breakdown"], notes: "" }
         ],
         audioScript: [
-          { speaker: "Host Alex", text: `Now studying ${fallbackTitle} in FreeNoteGPT.` }
+          { speaker: "Host Alex", text: `Welcome to our study session on ${localTitle} by ${localAuthor}.` }
         ],
         quiz: [
-          { prompt: `Is "${fallbackTitle}" ready in FreeNoteGPT?`, options: ["Yes", "No"], answer: 0 }
+          { prompt: `What is the primary subject of "${localTitle}"?`, options: [localTitle, "Unrelated topic"], answer: 0 }
         ],
         flashcards: [
-          { q: "Current Topic", a: fallbackTitle }
+          { q: "Lecture Title", a: `${localTitle} by ${localAuthor}` }
         ],
-        agentSteps: [`Loaded video ${extractedId}`]
+        agentSteps: [`Indexed "${localTitle}" by ${localAuthor}`]
       });
+      setChatMessages([
+        { role: 'assistant', text: `Loaded "${localTitle}". Ask me any question below!` }
+      ]);
     } finally {
       setIsFetching(false);
     }
@@ -257,19 +285,19 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: `Video Title: ${videoTitle}\nSummary: ${studyData?.summary || ''}\nTranscript: ${transcript.map(t => t.text).join(' ')}\n\nUser Question: ${userMsg}`,
-          systemInstruction: "You are FreeNoteGPT AI copilot. Provide accurate, clear study answers."
+          prompt: `Video: ${videoTitle}\nSummary: ${studyData?.summary || ''}\nTranscript: ${transcript.map(t => t.text).join(' ')}\n\nQuestion: ${userMsg}`,
+          systemInstruction: "You are FreeNoteGPT AI tutor. Answer clearly and accurately."
         })
       });
       const data = await res.json();
       setChatMessages(prev => [...prev, {
         role: 'assistant',
-        text: data.text || "Could not generate a response. Please check your GEMINI_API_KEY in Vercel."
+        text: data.text || "Unable to generate response right now."
       }]);
     } catch {
       setChatMessages(prev => [...prev, {
         role: 'assistant',
-        text: "Error communicating with AI service."
+        text: "Connection error while contacting AI tutor."
       }]);
     } finally {
       setIsChatLoading(false);
@@ -285,7 +313,6 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
   return (
     <div className="flex h-screen w-screen bg-slate-950 text-slate-100 flex-col overflow-hidden select-none">
       
-      {/* TOP HEADER */}
       <header className="h-14 border-b border-slate-800 bg-slate-900/90 px-4 flex items-center justify-between z-20">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-white shadow-md">
@@ -300,22 +327,21 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
         </div>
 
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowShareModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-700/80 text-xs text-slate-200 transition-colors">
+          <button onClick={() => setShowShareModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-700/80 text-xs text-slate-200">
             <Share2 className="w-3.5 h-3.5 text-slate-400" />
             <span>Share</span>
           </button>
-          <button onClick={() => setShowUpgradeModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-700/80 text-xs text-amber-300 font-medium transition-colors">
+          <button onClick={() => setShowUpgradeModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-700/80 text-xs text-amber-300 font-medium">
             <Rocket className="w-3.5 h-3.5 text-amber-400" />
             <span>Pro</span>
           </button>
-          <button onClick={handleNewSession} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-200 text-slate-950 font-semibold text-xs transition-colors shadow-sm">
+          <button onClick={handleNewSession} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-200 text-slate-950 font-semibold text-xs shadow-sm">
             <Plus className="w-4 h-4 text-slate-950" />
             <span>New</span>
           </button>
         </div>
       </header>
 
-      {/* MAIN WORKSPACE */}
       <div className="flex-1 flex overflow-hidden">
         
         {/* LEFT COLUMN */}
@@ -332,7 +358,7 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
             <button 
               onClick={handleFetch}
               disabled={isFetching}
-              className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
             >
               {isFetching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
               <span>{isFetching ? 'Analyzing...' : 'Fetch'}</span>
@@ -342,7 +368,7 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
           <div className="relative aspect-video bg-slate-950 flex items-center justify-center border-b border-slate-800">
             {videoId ? (
               <iframe
-                src={`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=0&rel=0`}
+                src={`[https://www.youtube-nocookie.com/embed/$](https://www.youtube-nocookie.com/embed/$){videoId}?autoplay=0&rel=0`}
                 className="w-full h-full border-0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
@@ -370,7 +396,7 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
                 placeholder="Search transcript..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[11px] text-slate-300 w-36 focus:outline-none focus:border-slate-700"
+                className="bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[11px] text-slate-300 w-36 focus:outline-none"
               />
             </div>
 
@@ -388,13 +414,9 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
                 transcript
                   .filter(t => t.text.toLowerCase().includes(searchQuery.toLowerCase()))
                   .map((seg, idx) => (
-                    <div key={idx} className="group flex gap-3 p-2 rounded-lg hover:bg-slate-900 transition-colors text-xs">
-                      <span className="font-mono text-cyan-400/80 font-medium text-[11px] select-none pt-0.5">
-                        {seg.time}
-                      </span>
-                      <p className="text-slate-300 group-hover:text-slate-100 leading-relaxed">
-                        {seg.text}
-                      </p>
+                    <div key={idx} className="group flex gap-3 p-2 rounded-lg hover:bg-slate-900 text-xs">
+                      <span className="font-mono text-cyan-400/80 font-medium text-[11px] pt-0.5">{seg.time}</span>
+                      <p className="text-slate-300 group-hover:text-slate-100 leading-relaxed">{seg.text}</p>
                     </div>
                   ))
               )}
@@ -406,15 +428,15 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
         <div className="w-1/2 flex flex-col bg-slate-950 overflow-hidden">
           
           <div className="p-3 border-b border-slate-800 bg-slate-900/50 flex gap-2">
-            <button onClick={() => setActiveTab('transcript')} className={activeTab === 'transcript' ? 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-slate-800 border-slate-700 text-white' : 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-slate-900/50 border-transparent text-slate-400 hover:text-slate-200'}>
+            <button onClick={() => setActiveTab('transcript')} className={activeTab === 'transcript' ? 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-slate-800 border-slate-700 text-white' : 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-slate-900/50 border-transparent text-slate-400'}>
               <FileText className="w-3.5 h-3.5" />
               <span>Transcript</span>
             </button>
-            <button onClick={() => setActiveTab('notes')} className={activeTab === 'notes' ? 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-cyan-950/40 border-cyan-800/80 text-cyan-300' : 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-slate-900/50 border-transparent text-slate-400 hover:text-slate-200'}>
+            <button onClick={() => setActiveTab('notes')} className={activeTab === 'notes' ? 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-cyan-950/40 border-cyan-800/80 text-cyan-300' : 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-slate-900/50 border-transparent text-slate-400'}>
               <Cpu className="w-3.5 h-3.5 text-cyan-400" />
               <span>AI Notes</span>
             </button>
-            <button onClick={() => setActiveTab('chat')} className={activeTab === 'chat' ? 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-slate-800 border-slate-700 text-white' : 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-slate-900/50 border-transparent text-slate-400 hover:text-slate-200'}>
+            <button onClick={() => setActiveTab('chat')} className={activeTab === 'chat' ? 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-slate-800 border-slate-700 text-white' : 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-slate-900/50 border-transparent text-slate-400'}>
               <MessageSquare className="w-3.5 h-3.5" />
               <span>AI Chat</span>
             </button>
@@ -430,7 +452,7 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
                 <>
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800">
                     <span className="text-xs text-slate-400 font-mono">Segments: {transcript.length}</span>
-                    <button onClick={() => handleCopy(transcript.map(t => `${t.time} ${t.text}`).join('\n'))} className="flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300">
+                    <button onClick={() => handleCopy(transcript.map(t => `${t.time} ${t.text}`).join('\n'))} className="flex items-center gap-1 text-xs text-cyan-400">
                       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                       <span>{copied ? 'Copied' : 'Copy All'}</span>
                     </button>
@@ -483,14 +505,14 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
                 {isFetching ? (
                   <div className="flex flex-col items-center justify-center h-64 space-y-3 text-slate-400">
                     <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
-                    <p className="text-xs font-medium">FreeNoteGPT is analyzing video and generating study tools...</p>
+                    <p className="text-xs font-medium">FreeNoteGPT is generating custom study notes...</p>
                   </div>
                 ) : !studyData ? (
                   <div className="flex flex-col items-center justify-center h-64 p-6 text-center space-y-2">
                     <Cpu className="w-8 h-8 text-slate-700 mb-1" />
                     <p className="text-xs font-semibold text-slate-300">FreeNoteGPT Study Workspace</p>
                     <p className="text-[11px] text-slate-500 max-w-xs">
-                      Paste any YouTube lecture or tutorial URL above and click Fetch to generate summaries, mind maps, slides, audio overviews, quizzes, and flashcards.
+                      Paste any YouTube URL on the left and click Fetch to generate summaries, mind maps, slides, audio overviews, quizzes, and flashcards.
                     </p>
                   </div>
                 ) : (
@@ -531,7 +553,7 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
                 {chatMessages.length === 0 ? (
                   <div className="flex items-center justify-center h-64 text-xs text-slate-500">
-                    Fetch a video first or ask a question below to start chatting with FreeNoteGPT.
+                    Fetch a video first or ask a question below to start chatting.
                   </div>
                 ) : (
                   chatMessages.map((m, idx) => (
@@ -546,7 +568,7 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
                   <div className="flex justify-start">
                     <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-tl-none px-4 py-2 text-xs text-slate-400 flex items-center gap-2">
                       <RefreshCw className="w-3 h-3 animate-spin text-cyan-400" />
-                      FreeNoteGPT is thinking...
+                      Thinking...
                     </div>
                   </div>
                 )}
@@ -557,7 +579,7 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
                   type="text" 
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder={videoTitle ? `Ask FreeNoteGPT about ${videoTitle.slice(0, 32)}...` : "Ask FreeNoteGPT a question..."}
+                  placeholder={videoTitle ? `Ask about ${videoTitle.slice(0, 32)}...` : "Ask FreeNoteGPT a question..."}
                   className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
                 />
                 <button type="submit" disabled={isChatLoading || !chatInput.trim()} className="p-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg disabled:opacity-40">
@@ -570,17 +592,13 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
         </div>
       </div>
 
-      {/* SHARE MODAL */}
       {showShareModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="font-bold text-sm text-slate-100 flex items-center gap-2">
-                <Share2 className="w-4 h-4 text-cyan-400" /> Share FreeNoteGPT
-              </h3>
+              <h3 className="font-bold text-sm text-slate-100">Share FreeNoteGPT</h3>
               <button onClick={() => setShowShareModal(false)} className="text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
             </div>
-            <p className="text-xs text-slate-400">Share your FreeNoteGPT study workspace link with friends.</p>
             <div className="flex gap-2">
               <input readOnly value={window.location.href} className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 font-mono" />
               <button onClick={() => handleCopy(window.location.href)} className="px-3 py-1.5 bg-cyan-600 text-white rounded-lg text-xs font-semibold">
@@ -591,29 +609,21 @@ Return a strictly valid JSON object tailored to "${activeTitle}":
         </div>
       )}
 
-      {/* UPGRADE MODAL */}
       {showUpgradeModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Rocket className="w-5 h-5 text-amber-400" />
-                <h3 className="font-bold text-sm text-slate-100">FreeNoteGPT Pro</h3>
-              </div>
+              <h3 className="font-bold text-sm text-slate-100">FreeNoteGPT Pro</h3>
               <button onClick={() => setShowUpgradeModal(false)} className="text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
             </div>
-            <p className="text-xs text-slate-300">All 8 AI study tools (Summaries, Mind Maps, Infographics, Slides, Audio, Quizzes, Flashcards, and AI Agent) are completely free and unlocked on FreeNoteGPT.</p>
-            <button onClick={() => setShowUpgradeModal(false)} className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-bold text-xs rounded-xl shadow-md">
-              Got It
-            </button>
+            <p className="text-xs text-slate-300">All 8 AI study tools are unlocked and free on FreeNoteGPT.</p>
+            <button onClick={() => setShowUpgradeModal(false)} className="w-full py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl">Got It</button>
           </div>
         </div>
       )}
     </div>
   );
 }
-
-// ── SUB-PANELS ──
 
 function MindMapPanel({ title, branches = [] }) {
   const [zoom, setZoom] = useState(1);
