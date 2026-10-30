@@ -104,7 +104,7 @@ export default function App() {
             takeaways: parsed.takeaways || []
           });
         } catch {
-          // Keep current state on parse failure
+          // Keep default if json parse is not needed
         }
       }
     } catch (err) {
@@ -155,7 +155,7 @@ export default function App() {
     } catch {
       setChatMessages(prev => [...prev, {
         role: 'assistant',
-        text: 'Self-attention processes tokens dynamically via Query, Key, and Value vectors.'
+        text: 'Self-attention computes context globally via dynamic Query, Key, and Value vectors.'
       }]);
     } finally {
       setIsChatLoading(false);
@@ -506,3 +506,430 @@ export default function App() {
               <button 
                 onClick={() => handleCopy(window.location.href)}
                 className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold"
+              >
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showUpgradeModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Rocket className="w-5 h-5 text-amber-400" />
+                <h3 className="font-bold text-sm text-slate-100">Upgrade to Pro Workspace</h3>
+              </div>
+              <button onClick={() => setShowUpgradeModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-slate-950/60 border border-slate-800 p-4 rounded-xl space-y-2">
+                <div className="text-xs font-semibold text-slate-400">Free Tier</div>
+                <div className="text-xl font-bold text-slate-100">$0</div>
+                <ul className="text-[11px] text-slate-400 space-y-1.5 pt-2">
+                  <li>• 20 video summaries / mo</li>
+                  <li>• 500 Flashcards storage</li>
+                  <li>• Standard speech synthesis</li>
+                </ul>
+              </div>
+
+              <div className="bg-amber-950/20 border border-amber-500/40 p-4 rounded-xl space-y-2 relative">
+                <span className="absolute -top-2.5 right-3 text-[9px] bg-amber-500 text-slate-950 px-2 py-0.5 rounded-full font-bold uppercase">
+                  Popular
+                </span>
+                <div className="text-xs font-semibold text-amber-400">Pro Unlimited</div>
+                <div className="text-xl font-bold text-white">$9.99 <span className="text-xs font-normal text-slate-400">/mo</span></div>
+                <ul className="text-[11px] text-slate-300 space-y-1.5 pt-2">
+                  <li>• Unlimited YouTube parsing</li>
+                  <li>• Autonomous AI Agent reasoning</li>
+                  <li>• Neural studio voices</li>
+                </ul>
+              </div>
+            </div>
+
+            <button 
+              onClick={() => { alert('Stripe checkout triggers here.'); setShowUpgradeModal(false); }}
+              className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold text-xs rounded-xl shadow-md transition-all"
+            >
+              Continue with Pro
+            </button>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+// ── SUB-PANELS ──
+
+function SummarizePanel({ summaryData }) {
+  return (
+    <div className="p-4 space-y-4">
+      <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-2">
+        <span className="text-[10px] uppercase font-bold text-cyan-400 tracking-wider">Executive Summary</span>
+        <h3 className="text-sm font-semibold text-slate-100">{summaryData.title}</h3>
+        <p className="text-xs text-slate-400 leading-relaxed">{summaryData.summary}</p>
+      </div>
+
+      <div className="space-y-2">
+        <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider block">Key Takeaways</span>
+        {summaryData.takeaways.map((pt, i) => (
+          <div key={i} className="flex items-start gap-2 text-xs text-slate-300 bg-slate-900/60 border border-slate-800/80 p-2.5 rounded-lg">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-1.5 flex-shrink-0" />
+            <span>{pt}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MindMapPanel({ title }) {
+  const [zoom, setZoom] = useState(1);
+  return (
+    <div className="p-4 flex flex-col h-full space-y-3">
+      <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+        <span className="text-xs font-semibold text-slate-300">Concept Map: {title}</span>
+        <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded p-0.5 text-xs">
+          <button onClick={() => setZoom(z => Math.max(0.7, z - 0.1))} className="px-2 py-0.5 hover:text-white">-</button>
+          <span className="px-1 text-[10px] text-slate-400">{Math.round(zoom * 100)}%</span>
+          <button onClick={() => setZoom(z => Math.min(1.4, z + 0.1))} className="px-2 py-0.5 hover:text-white">+</button>
+        </div>
+      </div>
+
+      <div className="flex-1 bg-slate-900/40 border border-slate-800 rounded-xl p-4 overflow-auto flex items-center justify-center min-h-[280px]">
+        <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center' }} className="flex items-center gap-8 transition-transform">
+          <div className="bg-cyan-950 border border-cyan-500/80 text-cyan-200 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg max-w-[140px] text-center">
+            {title}
+          </div>
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="w-6 h-px bg-slate-700" />
+              <div className="bg-slate-900 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs">
+                Foundations & Inputs
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="w-6 h-px bg-slate-700" />
+              <div className="bg-slate-900 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs">
+                Core Transformations
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="w-6 h-px bg-slate-700" />
+              <div className="bg-slate-900 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs">
+                Outputs & Takeaways
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InfographicPanel({ title }) {
+  const cards = [
+    { title: "Subject Focus", content: title, badge: "Topic", metric: "Key" },
+    { title: "Processing Method", content: "Extracted timed text segments vectorized for LLM synthesis.", badge: "Pipeline", metric: "Direct" },
+    { title: "Key Insight", content: "Algorithmic synthesis isolates critical concepts from lecture dialogue.", badge: "Core", metric: "100%" }
+  ];
+
+  return (
+    <div className="p-4 space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {cards.map((c, i) => (
+          <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+            <div>
+              <div className="flex justify-between items-start mb-2">
+                <span className="text-[9px] font-bold uppercase bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded">
+                  {c.badge}
+                </span>
+                <span className="text-base font-bold text-emerald-400">{c.metric}</span>
+              </div>
+              <h4 className="text-xs font-medium text-slate-100 mb-1">{c.title}</h4>
+              <p className="text-[11px] text-slate-400">{c.content}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SlidesPanel({ summaryData }) {
+  const [slide, setSlide] = useState(0);
+  const slides = [
+    {
+      title: summaryData.title,
+      bullets: summaryData.takeaways.slice(0, 3),
+      notes: "High-level takeaway slide generated from the video transcript."
+    },
+    {
+      title: "Core Mechanics",
+      bullets: ["Structured knowledge extraction", "Automated multi-subspace indexing", "Timestamped reference alignments"],
+      notes: "Contextual points derived from topic analysis."
+    }
+  ];
+
+  return (
+    <div className="p-4 space-y-3">
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 min-h-[200px] flex flex-col justify-between">
+        <div>
+          <h3 className="text-sm font-bold text-slate-100 mb-3">{slides[slide].title}</h3>
+          <ul className="space-y-1.5">
+            {slides[slide].bullets.map((b, i) => (
+              <li key={i} className="text-xs text-slate-300 flex items-start gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-400 mt-1.5 flex-shrink-0" />
+                <span>{b}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="mt-4 pt-2 border-t border-slate-800 text-[11px] text-slate-400 italic">
+          Notes: {slides[slide].notes}
+        </div>
+      </div>
+
+      <div className="flex justify-between items-center text-xs">
+        <button 
+          onClick={() => setSlide(s => Math.max(0, s - 1))}
+          disabled={slide === 0}
+          className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300 disabled:opacity-30"
+        >
+          Previous
+        </button>
+        <span className="text-slate-500 font-mono text-[11px]">Slide {slide + 1} of {slides.length}</span>
+        <button 
+          onClick={() => setSlide(s => Math.min(slides.length - 1, s + 1))}
+          disabled={slide === slides.length - 1}
+          className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300 disabled:opacity-30"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AudioPanel({ summaryData }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentLine, setCurrentLine] = useState(0);
+
+  const script = [
+    { speaker: "Host Alex", text: `Welcome to our overview of ${summaryData.title}.` },
+    { speaker: "Dr. Jordan", text: summaryData.summary },
+    { speaker: "Host Alex", text: summaryData.takeaways[0] || "That wraps up our key takeaway." }
+  ];
+
+  const toggleSpeech = () => {
+    if (!('speechSynthesis' in window)) {
+      alert("Browser speech synthesis not supported.");
+      return;
+    }
+
+    if (isPlaying) {
+      window.speechSynthesis.cancel();
+      setIsPlaying(false);
+      return;
+    }
+
+    setIsPlaying(true);
+    let idx = 0;
+
+    const speakItem = () => {
+      if (idx >= script.length) {
+        setIsPlaying(false);
+        setCurrentLine(0);
+        return;
+      }
+      setCurrentLine(idx);
+      const utter = new SpeechSynthesisUtterance(script[idx].text);
+      utter.rate = 1.0;
+      utter.pitch = idx % 2 === 0 ? 1.0 : 1.25;
+      utter.onend = () => {
+        idx++;
+        speakItem();
+      };
+      window.speechSynthesis.speak(utter);
+    };
+
+    speakItem();
+  };
+
+  return (
+    <div className="p-4 space-y-3">
+      <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+        <span className="text-xs font-semibold text-slate-300">Audio Synthesis</span>
+        <button 
+          onClick={toggleSpeech}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-slate-950 font-bold rounded-lg text-xs"
+        >
+          {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+          <span>{isPlaying ? 'Pause' : 'Play Audio'}</span>
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        {script.map((line, idx) => (
+          <div 
+            key={idx} 
+            className={
+              isPlaying && currentLine === idx 
+                ? 'p-3 rounded-xl border text-xs transition-all bg-orange-500/10 border-orange-500/40 text-orange-200' 
+                : 'p-3 rounded-xl border text-xs transition-all bg-slate-900 border-slate-800 text-slate-400'
+            }
+          >
+            <div className="font-bold text-[10px] text-slate-300 mb-1">{line.speaker}</div>
+            <p>{line.text}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function QuizPanel() {
+  const [selected, setSelected] = useState(null);
+  const [submitted, setSubmitted] = useState(false);
+
+  const question = {
+    prompt: "What is the primary role of self-attention in sequential transformers?",
+    options: [
+      "To restrict token relationships strictly to immediate adjacent neighbors",
+      "To dynamically compute all-pairs context weights across arbitrary sequence lengths",
+      "To replace dense projection matrices with convolutional filters",
+      "To force sequential recurrent computation across hidden layers"
+    ],
+    answer: 1
+  };
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+        <div className="flex justify-between items-center">
+          <span className="text-[10px] font-bold uppercase bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded">
+            Question 1 of 1
+          </span>
+          <span className="text-xs text-slate-400">Score: {submitted && selected === question.answer ? '100%' : '0%'}</span>
+        </div>
+        <p className="text-xs font-semibold text-slate-100">{question.prompt}</p>
+
+        <div className="space-y-2 pt-1">
+          {question.options.map((opt, i) => (
+            <button
+              key={i}
+              onClick={() => !submitted && setSelected(i)}
+              className={
+                submitted && i === question.answer
+                  ? 'w-full text-left p-3 rounded-lg border text-xs transition-colors bg-emerald-950/80 border-emerald-500 text-emerald-200'
+                  : selected === i 
+                  ? 'w-full text-left p-3 rounded-lg border text-xs transition-colors bg-cyan-950/60 border-cyan-500 text-white' 
+                  : 'w-full text-left p-3 rounded-lg border text-xs transition-colors bg-slate-950/60 border-slate-800 text-slate-300 hover:bg-slate-900'
+              }
+            >
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[10px] opacity-60">[{String.fromCharCode(65 + i)}]</span>
+                <span>{opt}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <button 
+          onClick={() => setSubmitted(true)}
+          disabled={selected === null}
+          className="w-full mt-2 py-2 bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold text-xs rounded-lg disabled:opacity-40 transition-colors"
+        >
+          Check Answer
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FlashcardsPanel() {
+  const [flipped, setFlipped] = useState(false);
+  const [index, setIndex] = useState(0);
+
+  const cards = [
+    { q: "What is Multi-Head Attention?", a: "Projecting Q, K, V with multiple linear layers into parallel subspace representations." },
+    { q: "What is the primary scaling bottleneck in Transformers?", a: "Memory and computation scales quadratically O(N²) with token sequence length." }
+  ];
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="flex justify-between items-center text-xs text-slate-400">
+        <span>Spaced Repetition Deck</span>
+        <span>{index + 1} of {cards.length}</span>
+      </div>
+
+      <div 
+        onClick={() => setFlipped(!flipped)}
+        className="h-44 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer shadow-lg transition-all"
+      >
+        <span className="text-[10px] uppercase font-bold text-slate-500 mb-2">
+          {flipped ? 'Answer' : 'Question (Click to flip)'}
+        </span>
+        <p className="text-xs font-medium text-slate-100 max-w-sm">
+          {flipped ? cards[index].a : cards[index].q}
+        </p>
+      </div>
+
+      <div className="flex gap-2">
+        <button 
+          onClick={() => { setFlipped(false); setIndex((index + 1) % cards.length); }}
+          className="flex-1 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 rounded-lg text-xs font-semibold"
+        >
+          Need Review
+        </button>
+        <button 
+          onClick={() => { setFlipped(false); setIndex((index + 1) % cards.length); }}
+          className="flex-1 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 rounded-lg text-xs font-semibold"
+        >
+          Mastered
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AgentPanel() {
+  const steps = [
+    { status: 'done', text: 'Scraped transcript tokens & extracted primary claims' },
+    { status: 'done', text: 'Cross-referenced query formulations with research literature' },
+    { status: 'active', text: 'Drafting synthesis report with verifiable timestamped citations' }
+  ];
+
+  return (
+    <div className="p-4 space-y-3">
+      <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+        <span className="text-xs font-semibold text-slate-300">Autonomous Reasoning Pipeline</span>
+        <span className="text-[10px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-2 py-0.5 rounded-full font-mono animate-pulse">
+          Loop Active
+        </span>
+      </div>
+
+      <div className="space-y-2">
+        {steps.map((st, i) => (
+          <div key={i} className="flex items-center gap-3 p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs">
+            {st.status === 'done' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            ) : (
+              <RefreshCw className="w-4 h-4 text-cyan-400 animate-spin flex-shrink-0" />
+            )}
+            <span className={st.status === 'done' ? 'text-slate-300' : 'text-slate-100 font-medium'}>
+              {st.text}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
