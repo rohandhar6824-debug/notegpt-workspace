@@ -7,17 +7,18 @@ export default async function handler(req, res) {
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    return res.status(500).json({ error: 'GEMINI_API_KEY is not configured on Vercel.' });
+    return res.status(500).json({ error: 'GEMINI_API_KEY is missing in Vercel Environment Variables.' });
   }
 
-  const models = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  let lastError = null;
 
   for (const model of models) {
     try {
       const payload = {
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
-          temperature: 0.2,
+          temperature: 0.3,
           ...(jsonMode ? { responseMimeType: "application/json" } : {})
         }
       };
@@ -38,12 +39,18 @@ export default async function handler(req, res) {
       const data = await response.json();
 
       if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        return res.status(200).json({ text: data.candidates[0].content.parts[0].text });
+        let rawText = data.candidates[0].content.parts[0].text.trim();
+        if (jsonMode) {
+          rawText = rawText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/, '').trim();
+        }
+        return res.status(200).json({ text: rawText, modelUsed: model });
+      } else {
+        lastError = data.error?.message || `HTTP ${response.status}`;
       }
     } catch (err) {
-      console.warn(`Model ${model} failed, trying next:`, err.message);
+      lastError = err.message;
     }
   }
 
-  return res.status(500).json({ error: 'Failed to generate content with Gemini.' });
+  return res.status(500).json({ error: lastError || 'Failed to generate AI response.' });
 }
