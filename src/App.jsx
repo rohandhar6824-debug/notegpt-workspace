@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import {
   Share2, Rocket, Plus, FileText, MessageSquare, ListFilter,
   Network, LayoutGrid, Presentation, Mic, HelpCircle,
-  CreditCard, Cpu, RefreshCw, Send, Copy, Check, ExternalLink, X, Loader2
+  CreditCard, Cpu, RefreshCw, Send, Copy, Check, ExternalLink, X, Loader2,
+  Play, Pause
 } from 'lucide-react';
 
 const INITIAL_TRANSCRIPT = [
@@ -18,7 +19,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('notes');
   const [activeTool, setActiveTool] = useState('summarize');
   
-  // Video and transcript states
   const [videoUrl, setVideoUrl] = useState('https://youtu.be/VQeI71B5ccM');
   const [videoId, setVideoId] = useState('VQeI71B5ccM');
   const [transcript, setTranscript] = useState(INITIAL_TRANSCRIPT);
@@ -26,7 +26,6 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [copied, setCopied] = useState(false);
 
-  // Dynamic AI content states
   const [summaryData, setSummaryData] = useState({
     title: "Attention as the Core Foundation",
     summary: "The presented material eliminates recurrence and convolutions in sequence transduction tasks, demonstrating that simple scaled dot-product attention paired with multi-head transformations provides superior generalization with minimal training cost.",
@@ -46,13 +45,11 @@ export default function App() {
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
 
-  // Helper to extract 11-char YouTube ID from any standard or shortened URL
   const extractVideoId = (url) => {
     const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
     return match ? match[1] : null;
   };
 
-  // Live Fetch & Summarize Handler
   const handleFetch = async () => {
     const extractedId = extractVideoId(videoUrl);
     if (!extractedId) {
@@ -64,7 +61,6 @@ export default function App() {
     setIsFetching(true);
 
     try {
-      // 1. Call transcript serverless function
       const res = await fetch('/api/transcript', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -87,7 +83,6 @@ export default function App() {
         setTranscript(parsedTranscript);
       }
 
-      // 2. Request Gemini to summarize the fresh transcript
       const fullText = parsedTranscript.map(t => t.text).join(' ');
       const aiRes = await fetch('/api/generate', {
         method: 'POST',
@@ -109,7 +104,7 @@ export default function App() {
             takeaways: parsed.takeaways || []
           });
         } catch {
-          // Fallback if model output wasn't pure JSON
+          // Keep current state on parse failure
         }
       }
     } catch (err) {
@@ -160,7 +155,7 @@ export default function App() {
     } catch {
       setChatMessages(prev => [...prev, {
         role: 'assistant',
-        text: 'The model attends to tokens globally via Query, Key, and Value projections.'
+        text: 'Self-attention processes tokens dynamically via Query, Key, and Value vectors.'
       }]);
     } finally {
       setIsChatLoading(false);
@@ -241,7 +236,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* Interactive YouTube Iframe */}
           <div className="relative aspect-video bg-black flex items-center justify-center border-b border-slate-800">
             {videoId ? (
               <iframe
@@ -350,7 +344,6 @@ export default function App() {
           {activeTab === 'notes' && (
             <div className="flex-1 flex flex-col overflow-hidden">
               
-              {/* 8-Tool Selector Grid */}
               <div className="p-3 border-b border-slate-800 grid grid-cols-2 gap-2 bg-slate-900/30">
                 <button onClick={() => setActiveTool('summarize')} className={getToolBtnClass('summarize')}>
                   <div className="flex items-center gap-2">
@@ -425,7 +418,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Dynamic Sub-panels */}
               <div className="flex-1 overflow-y-auto">
                 {activeTool === 'summarize' && <SummarizePanel summaryData={summaryData} />}
                 {activeTool === 'mindmap' && <MindMapPanel title={summaryData.title} />}
@@ -488,3 +480,29 @@ export default function App() {
           )}
 
         </div>
+      </div>
+
+      {/* ── MODALS ── */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-sm text-slate-100 flex items-center gap-2">
+                <Share2 className="w-4 h-4 text-cyan-400" /> Share Study Workspace
+              </h3>
+              <button onClick={() => setShowShareModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-400">
+              Shareable link for this video and study workspace.
+            </p>
+            <div className="flex gap-2">
+              <input 
+                readOnly 
+                value={window.location.href}
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 font-mono"
+              />
+              <button 
+                onClick={() => handleCopy(window.location.href)}
+                className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold"
