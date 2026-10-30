@@ -52,7 +52,6 @@ function parseCaptionPayload(rawText) {
   const items = [];
   const trimmed = (rawText || '').trim();
 
-  // 1. Check if JSON3 format
   if (trimmed.indexOf('{') === 0) {
     try {
       const json = JSON.parse(trimmed);
@@ -72,11 +71,10 @@ function parseCaptionPayload(rawText) {
       }
       if (items.length > 0) return items;
     } catch (e) {
-      // Fall through to XML regex
+      // Fall through
     }
   }
 
-  // 2. Parse <text start="4.16" dur="3.2"> format
   const textRegex = /<text[^>]*start="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g;
   let m;
   while ((m = textRegex.exec(trimmed)) !== null) {
@@ -87,7 +85,6 @@ function parseCaptionPayload(rawText) {
   }
   if (items.length > 0) return items;
 
-  // 3. Parse <p t="4160" d="3200"> srv3 format
   const pRegex = /<p[^>]*t="(\d+)"[^>]*>([\s\S]*?)<\/p>/g;
   while ((m = pRegex.exec(trimmed)) !== null) {
     const clean = decodeHtmlEntities(m[2].replace(/<[^>]+>/g, ''));
@@ -151,7 +148,6 @@ export default async function handler(req, res) {
   let description = '';
   let rawSubtitles = [];
 
-  // 1. Fetch official title & creator via Noembed
   try {
     const oembedRes = await fetch('https://noembed.com/embed?url=https://www.youtube.com/watch?v=' + videoId);
     if (oembedRes.ok) {
@@ -163,7 +159,6 @@ export default async function handler(req, res) {
     console.warn('oEmbed warning:', e.message);
   }
 
-  // 2. Try InnerTube ANDROID Player API first (bypasses web HTML blocks)
   try {
     const playerRes = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
       method: 'POST',
@@ -211,7 +206,6 @@ export default async function handler(req, res) {
     console.warn('InnerTube ANDROID fallback:', e.message);
   }
 
-  // 3. Fallback: Scrape Watch Page with Bracket-Balanced JSON Extractor
   if (rawSubtitles.length === 0) {
     try {
       const watchRes = await fetch('https://www.youtube.com/watch?v=' + videoId, {
@@ -245,7 +239,7 @@ export default async function handler(req, res) {
         }
       }
     } catch (e) {
-      console.warn('Watch page scrape warning:', e.message);
+      console.warn('Watch scrape warning:', e.message);
     }
   }
 
@@ -261,3 +255,4 @@ export default async function handler(req, res) {
     subtitles: rawSubtitles
   });
 }
+// === END OF FILE ===
