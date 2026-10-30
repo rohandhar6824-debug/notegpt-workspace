@@ -386,6 +386,21 @@ export default function App() {
                 <button 
                   onClick={() => setActiveTool('agent')}
                   className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs font-medium transition-all ${
-                    activeTool === 'agent'
-                      ? 'bg-slate-800 border-cyan-500/60 text-white shadow-sm'
-                      : 'bg-slate-900/60 border-slate-800/80 text-s
+                    {/* 8. AI Agent */}
+<button 
+  onClick={() => setActiveTool('agent')}
+  className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs font-medium transition-all ${
+    activeTool === 'agent'
+      ? 'bg-slate-800 border-cyan-500/60 text-white shadow-sm'
+      : 'bg-slate-900/60 border-slate-800/80 text-slate-300 hover:bg-slate-850'
+  }`}
+>
+  <div className="flex items-center gap-2">
+    <Cpu className="w-4 h-4 text-cyan-400" />
+    <span>AI Agent</span>
+  </div>
+  <div className="flex items-center gap-1.5">
+    <span className="w-2 h-2 rounded-full bg-rose-500" />
+    <ExternalLink className="w-3 h-3 text-slate-400" />
+  </div>
+</button>
