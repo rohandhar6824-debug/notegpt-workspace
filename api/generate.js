@@ -3,29 +3,20 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { prompt, systemInstruction, jsonMode = false } = req.body;
+  const { prompt, systemInstruction, videoId } = req.body;
   const apiKey = process.env.GEMINI_API_KEY;
 
-  const extractJsonBlock = (str) => {
-    const text = (str || '').trim();
-    const first = text.indexOf('{');
-    const last = text.lastIndexOf('}');
-    if (first !== -1 && last !== -1 && last > first) {
-      return text.slice(first, last + 1);
-    }
-    return text;
-  };
-
   if (apiKey && apiKey !== 'your_gemini_api_key_here') {
-    const models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash'];
+    const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
     for (let i = 0; i < models.length; i++) {
       const model = models[i];
       try {
+        const parts = [{ text: prompt }];
+
         const payload = {
-          contents: [{ parts: [{ text: prompt }] }],
+          contents: [{ parts: parts }],
           generationConfig: {
-            temperature: 0.3,
-            ...(jsonMode ? { responseMimeType: 'application/json' } : {})
+            temperature: 0.3
           }
         };
 
@@ -44,7 +35,7 @@ export default async function handler(req, res) {
         const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (response.ok && candidateText) {
           return res.status(200).json({
-            text: jsonMode ? extractJsonBlock(candidateText) : candidateText.trim(),
+            text: candidateText.trim(),
             provider: model
           });
         }
@@ -54,6 +45,7 @@ export default async function handler(req, res) {
     }
   }
 
+  // Automatic Keyless Fallback
   try {
     const fallbackRes = await fetch('https://text.pollinations.ai/openai', {
       method: 'POST',
@@ -61,10 +53,9 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: 'openai',
         messages: [
-          { role: 'system', content: systemInstruction || 'You are a helpful AI tutor.' },
+          { role: 'system', content: systemInstruction || 'You are an expert academic tutor.' },
           { role: 'user', content: prompt }
-        ],
-        ...(jsonMode ? { response_format: { type: 'json_object' } } : {})
+        ]
       })
     });
 
@@ -73,7 +64,7 @@ export default async function handler(req, res) {
       const rawText = fbData.choices?.[0]?.message?.content || '';
       if (rawText) {
         return res.status(200).json({
-          text: jsonMode ? extractJsonBlock(rawText) : rawText.trim(),
+          text: rawText.trim(),
           provider: 'fallback-ai'
         });
       }
@@ -82,5 +73,5 @@ export default async function handler(req, res) {
     console.error('Fallback error:', err);
   }
 
-  return res.status(500).json({ error: 'AI generation service unavailable' });
+  return res.status(500).json({ error: 'AI service temporarily unavailable' });
 }

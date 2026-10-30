@@ -3,21 +3,196 @@ import {
   Share2, Rocket, Plus, FileText, MessageSquare, ListFilter,
   Network, LayoutGrid, Presentation, Mic, HelpCircle,
   CreditCard, Cpu, RefreshCw, Send, Copy, Check, ExternalLink, X, Loader2,
-  Play, Pause, Video
+  Play, Pause, Video, ChevronLeft, Download, Search, BookOpen, Layers, Compass, Settings
 } from 'lucide-react';
 
+function formatSec(sec) {
+  const total = Math.max(0, Math.floor(Number(sec) || 0));
+  const mm = String(Math.floor(total / 60)).padStart(2, '0');
+  const ss = String(total % 60).padStart(2, '0');
+  return mm + ':' + ss;
+}
+
+function parseTimeToSec(timeStr) {
+  if (!timeStr) return 0;
+  const parts = String(timeStr).trim().split(':').map(Number);
+  if (parts.length === 2) return (parts[0] || 0) * 60 + (parts[1] || 0);
+  if (parts.length === 3) return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+  return 0;
+}
+
+function parseStructuredNotes(rawText, defaultTitle, defaultAuthor) {
+  const getSection = (tag) => {
+    const marker = '===' + tag + '===';
+    const startIdx = rawText.indexOf(marker);
+    if (startIdx === -1) return '';
+    const contentStart = startIdx + marker.length;
+    const nextMatch = rawText.slice(contentStart).search(/===[A-Z_]+===/);
+    const sectionText = nextMatch === -1
+      ? rawText.slice(contentStart)
+      : rawText.slice(contentStart, contentStart + nextMatch);
+    return sectionText.trim();
+  };
+
+  const headline = getSection('HEADLINE') || ('Deep-Dive Analysis: ' + defaultTitle);
+
+  const summaryRaw = getSection('SUMMARY');
+  const summaryParagraphs = summaryRaw
+    ? summaryRaw.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean)
+    : ['This video provides a comprehensive exploration of ' + defaultTitle + ' by ' + defaultAuthor + ', breaking down its foundational principles, architecture, and practical mechanics.'];
+
+  const highlightsRaw = getSection('HIGHLIGHTS');
+  const highlights = highlightsRaw
+    .split('\n')
+    .map(l => l.replace(/^[-*•]\s*/, '').trim())
+    .filter(l => l.indexOf('|') !== -1)
+    .map(l => {
+      const parts = l.split('|').map(s => s.trim());
+      return {
+        time: parts[0] || '00:00',
+        title: parts[1] || 'Key Concept',
+        detail: parts.slice(2).join(' ') || ''
+      };
+    });
+
+  const takeawaysRaw = getSection('TAKEAWAYS');
+  const takeaways = takeawaysRaw
+    .split('\n')
+    .map(l => l.replace(/^[-*•\d.]+\s*/, '').trim())
+    .filter(Boolean);
+
+  const chaptersRaw = getSection('CHAPTERS');
+  const chapters = chaptersRaw
+    .split('\n')
+    .map(l => l.replace(/^[-*•]\s*/, '').trim())
+    .filter(l => l.indexOf('|') !== -1)
+    .map(l => {
+      const parts = l.split('|').map(s => s.trim());
+      return { time: parts[0] || '00:00', title: parts[1] || 'Section' };
+    });
+
+  const mindmapRaw = getSection('MINDMAP');
+  const mindmapBranches = mindmapRaw
+    .split('\n')
+    .map(l => l.replace(/^[-*•]\s*/, '').trim())
+    .filter(l => l.indexOf('|') !== -1)
+    .map(l => {
+      const parts = l.split('|').map(s => s.trim());
+      return {
+        branch: parts[0] || 'Core Topic',
+        children: parts.slice(1).filter(Boolean)
+      };
+    });
+
+  const infoRaw = getSection('INFOGRAPHIC');
+  const infographic = infoRaw
+    .split('\n')
+    .map(l => l.replace(/^[-*•]\s*/, '').trim())
+    .filter(l => l.indexOf('|') !== -1)
+    .map(l => {
+      const parts = l.split('|').map(s => s.trim());
+      return {
+        metric: parts[0] || 'Key',
+        badge: parts[1] || 'Concept',
+        title: parts[2] || 'Insight',
+        content: parts.slice(3).join(' ') || ''
+      };
+    });
+
+  const slidesRaw = getSection('SLIDES');
+  const slides = slidesRaw
+    .split('\n')
+    .map(l => l.replace(/^[-*•]\s*/, '').trim())
+    .filter(l => l.indexOf('|') !== -1)
+    .map(l => {
+      const parts = l.split('|').map(s => s.trim());
+      const bullets = (parts[1] || '').split(';').map(b => b.trim()).filter(Boolean);
+      return {
+        title: parts[0] || 'Slide',
+        bullets: bullets.length > 0 ? bullets : [parts[1] || 'Key point'],
+        notes: parts[2] || ''
+      };
+    });
+
+  const audioRaw = getSection('AUDIO');
+  const audioScript = audioRaw
+    .split('\n')
+    .map(l => l.replace(/^[-*•]\s*/, '').trim())
+    .filter(l => l.indexOf('|') !== -1)
+    .map(l => {
+      const parts = l.split('|').map(s => s.trim());
+      return { speaker: parts[0] || 'Host Alex', text: parts.slice(1).join(' ') };
+    });
+
+  const quizRaw = getSection('QUIZ');
+  const quiz = quizRaw
+    .split('\n')
+    .map(l => l.replace(/^[-*•]\s*/, '').trim())
+    .filter(l => l.indexOf('|') !== -1)
+    .map(l => {
+      const parts = l.split('|').map(s => s.trim());
+      return {
+        prompt: parts[0] || 'Question',
+        options: [parts[1] || 'A', parts[2] || 'B', parts[3] || 'C', parts[4] || 'D'],
+        answer: parseInt(parts[5], 10) || 0,
+        explanation: parts[6] || ''
+      };
+    });
+
+  const cardsRaw = getSection('FLASHCARDS');
+  const flashcards = cardsRaw
+    .split('\n')
+    .map(l => l.replace(/^[-*•]\s*/, '').trim())
+    .filter(l => l.indexOf('|') !== -1)
+    .map(l => {
+      const parts = l.split('|').map(s => s.trim());
+      return { q: parts[0] || 'Concept', a: parts.slice(1).join(' ') || '' };
+    });
+
+  const transcriptRaw = getSection('TRANSCRIPT');
+  const generatedParagraphs = transcriptRaw
+    .split('\n')
+    .map(l => l.replace(/^[-*•]\s*/, '').trim())
+    .filter(l => l.indexOf('|') !== -1)
+    .map(l => {
+      const parts = l.split('|').map(s => s.trim());
+      return { time: parts[0] || '00:00', text: parts.slice(1).join(' ') };
+    });
+
+  return {
+    title: defaultTitle,
+    author: defaultAuthor,
+    headline,
+    summaryParagraphs,
+    highlights,
+    takeaways,
+    chapters,
+    mindmapBranches,
+    infographic,
+    slides,
+    audioScript,
+    quiz,
+    flashcards,
+    generatedParagraphs
+  };
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState('notes');
+  const [rightTab, setRightTab] = useState('notes'); // 'notes' | 'chat'
+  const [leftSubTab, setLeftSubTab] = useState('transcript'); // 'transcript' | 'subtitles' | 'chapter'
   const [activeTool, setActiveTool] = useState('summarize');
 
   const [videoUrl, setVideoUrl] = useState('');
   const [videoId, setVideoId] = useState(null);
+  const [seekSeconds, setSeekSeconds] = useState(0);
   const [videoTitle, setVideoTitle] = useState('');
   const [isFetching, setIsFetching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showSearchBox, setShowSearchBox] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const [transcript, setTranscript] = useState([]);
+  const [paragraphs, setParagraphs] = useState([]);
+  const [subtitles, setSubtitles] = useState([]);
   const [studyData, setStudyData] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
@@ -32,14 +207,7 @@ export default function App() {
     return match ? match[1] : null;
   };
 
-  const formatSec = (sec) => {
-    const total = Math.max(0, Math.floor(Number(sec) || 0));
-    const mm = String(Math.floor(total / 60)).padStart(2, '0');
-    const ss = String(total % 60).padStart(2, '0');
-    return mm + ':' + ss;
-  };
-
-  const callAiWithFallback = async (promptText, sysText, isJson) => {
+  const callAiEngine = async (promptText, sysText, vidId) => {
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
@@ -47,7 +215,7 @@ export default function App() {
         body: JSON.stringify({
           prompt: promptText,
           systemInstruction: sysText,
-          jsonMode: isJson
+          videoId: vidId
         })
       });
       if (res.ok) {
@@ -55,7 +223,7 @@ export default function App() {
         if (data && data.text) return data.text;
       }
     } catch (e) {
-      console.warn('Backend AI call failed, using direct browser AI:', e);
+      console.warn('Server AI fallback:', e);
     }
 
     const directRes = await fetch('https://text.pollinations.ai/openai', {
@@ -66,12 +234,16 @@ export default function App() {
         messages: [
           { role: 'system', content: sysText },
           { role: 'user', content: promptText }
-        ],
-        ...(isJson ? { response_format: { type: 'json_object' } } : {})
+        ]
       })
     });
     const directData = await directRes.json();
     return directData.choices?.[0]?.message?.content || '';
+  };
+
+  const handleSeek = (timeStr) => {
+    const sec = parseTimeToSec(timeStr);
+    setSeekSeconds(sec);
   };
 
   const handleFetch = async () => {
@@ -83,27 +255,29 @@ export default function App() {
 
     window.speechSynthesis?.cancel();
     setVideoId(extractedId);
+    setSeekSeconds(0);
     setIsFetching(true);
     setStudyData(null);
-    setTranscript([]);
+    setParagraphs([]);
+    setSubtitles([]);
     setChatMessages([]);
 
     let localTitle = '';
-    let localAuthor = 'YouTube Channel';
+    let localAuthor = 'YouTube Creator';
     let localDesc = '';
-    let localTranscript = [];
+    let localParagraphs = [];
+    let localSubtitles = [];
 
     try {
       try {
-        const noembedUrl = 'https://noembed.com/embed?url=https://www.youtube.com/watch?v=' + extractedId;
-        const clientOembed = await fetch(noembedUrl);
+        const clientOembed = await fetch('https://noembed.com/embed?url=https://www.youtube.com/watch?v=' + extractedId);
         if (clientOembed.ok) {
           const oe = await clientOembed.json();
           if (oe.title) localTitle = oe.title;
           if (oe.author_name) localAuthor = oe.author_name;
         }
       } catch (e) {
-        console.warn('Client oEmbed error:', e);
+        console.warn('Client oembed warning:', e);
       }
 
       try {
@@ -118,140 +292,111 @@ export default function App() {
           if (meta.authorName) localAuthor = meta.authorName;
           if (meta.description) localDesc = meta.description;
 
-          if (meta.hasRealCaptions && Array.isArray(meta.transcript) && meta.transcript.length > 0) {
-            localTranscript = meta.transcript.map(item => ({
-              time: formatSec(item.start),
-              text: item.text
+          if (Array.isArray(meta.paragraphs) && meta.paragraphs.length > 0) {
+            localParagraphs = meta.paragraphs.map(p => ({
+              time: formatSec(p.start),
+              text: p.text
             }));
-            setTranscript(localTranscript);
+            setParagraphs(localParagraphs);
+          }
+
+          if (Array.isArray(meta.subtitles) && meta.subtitles.length > 0) {
+            localSubtitles = meta.subtitles.map(s => ({
+              time: formatSec(s.start),
+              text: s.text
+            }));
+            setSubtitles(localSubtitles);
           }
         }
       } catch (e) {
-        console.warn('Server transcript call failed:', e);
+        console.warn('Transcript API warning:', e);
       }
 
-      if (!localTitle) {
-        localTitle = 'YouTube Lecture';
-      }
+      if (!localTitle) localTitle = 'YouTube Video Lecture';
       setVideoTitle(localTitle);
 
-      const transcriptContext = localTranscript.length > 0
-        ? localTranscript.map(t => '[' + t.time + '] ' + t.text).join(' ').slice(0, 4500)
-        : 'Video Title: "' + localTitle + '" by ' + localAuthor + '. Description: ' + localDesc;
+      const transcriptSample = localParagraphs.length > 0
+        ? localParagraphs.map(p => '[' + p.time + '] ' + p.text).join('\n').slice(0, 8000)
+        : ('Video Title: "' + localTitle + '" by ' + localAuthor + '.\nDescription: ' + localDesc);
 
-      const prompt = 'Generate a complete educational study workspace for the YouTube video titled "' + localTitle + '" by "' + localAuthor + '".\n' +
-        'Context: ' + transcriptContext + '\n\n' +
-        'Return ONLY a valid JSON object with these exact keys:\n' +
-        '{\n' +
-        '  "summary": "Detailed 3-sentence executive summary of ' + localTitle + '",\n' +
-        '  "takeaways": ["Key point 1", "Key point 2", "Key point 3", "Key point 4"],\n' +
-        '  "branches": ["Subtopic 1", "Subtopic 2", "Subtopic 3", "Subtopic 4"],\n' +
-        '  "infographic": [\n' +
-        '    {"title": "Core Concept", "content": "Explanation", "badge": "Foundation", "metric": "Core"},\n' +
-        '    {"title": "Mechanism", "content": "Explanation", "badge": "Process", "metric": "Key"},\n' +
-        '    {"title": "Application", "content": "Explanation", "badge": "Outcome", "metric": "100%"}\n' +
-        '  ],\n' +
-        '  "slides": [\n' +
-        '    {"title": "1. Introduction", "bullets": ["Point 1", "Point 2", "Point 3"], "notes": "Speaker notes"},\n' +
-        '    {"title": "2. Core Mechanism", "bullets": ["Point 1", "Point 2", "Point 3"], "notes": "Speaker notes"},\n' +
-        '    {"title": "3. Key Takeaways", "bullets": ["Point 1", "Point 2", "Point 3"], "notes": "Speaker notes"}\n' +
-        '  ],\n' +
-        '  "audioScript": [\n' +
-        '    {"speaker": "Host Alex", "text": "Welcome! Today we are breaking down ' + localTitle + '."},\n' +
-        '    {"speaker": "Dr. Jordan", "text": "Direct explanation of the main concepts covered in this video."},\n' +
-        '    {"speaker": "Host Alex", "text": "Key takeaway summary for students."}\n' +
-        '  ],\n' +
-        '  "quiz": [\n' +
-        '    {"prompt": "Question 1 about ' + localTitle + '?", "options": ["Option A", "Option B", "Option C", "Option D"], "answer": 0},\n' +
-        '    {"prompt": "Question 2 about ' + localTitle + '?", "options": ["Option A", "Option B", "Option C", "Option D"], "answer": 1}\n' +
-        '  ],\n' +
-        '  "flashcards": [\n' +
-        '    {"q": "Question 1", "a": "Answer 1"},\n' +
-        '    {"q": "Question 2", "a": "Answer 2"},\n' +
-        '    {"q": "Question 3", "a": "Answer 3"}\n' +
-        '  ],\n' +
-        '  "agentSteps": ["Analyzed ' + localTitle + '", "Extracted key concepts and definitions", "Built quiz and flashcards"],\n' +
-        '  "generatedTranscript": [\n' +
-        '    {"time": "00:00", "text": "Introduction and motivation for ' + localTitle + '."},\n' +
-        '    {"time": "02:15", "text": "Core definitions and foundational building blocks."},\n' +
-        '    {"time": "05:30", "text": "Detailed walkthrough of the underlying mechanism and architecture."},\n' +
-        '    {"time": "09:45", "text": "Visual examples and step-by-step problem solving."},\n' +
-        '    {"time": "13:20", "text": "Review of main takeaways and conclusions."}\n' +
-        '  ]\n' +
-        '}';
+      const prompt = 'Analyze the YouTube video "' + localTitle + '" by "' + localAuthor + '".\n' +
+        'Transcript / Video Content:\n' + transcriptSample + '\n\n' +
+        'Produce an exhaustive, NoteGPT-grade study breakdown using the EXACT section headers below. Do not wrap in code blocks.\n\n' +
+        '===HEADLINE===\n' +
+        'Write a compelling academic headline summarizing the core theme of ' + localTitle + '\n\n' +
+        '===SUMMARY===\n' +
+        'Write 3 rich, detailed paragraphs explaining the video from start to finish. Include specific examples, concrete numbers, mathematical or structural details, and how the concepts connect.\n\n' +
+        '===HIGHLIGHTS===\n' +
+        '00:04 | Specific Concept Title | 2-sentence deep explanation of what happens in this segment.\n' +
+        '02:15 | Specific Concept Title | 2-sentence deep explanation of the mechanism and examples.\n' +
+        '05:40 | Specific Concept Title | 2-sentence deep explanation of the architecture or math.\n' +
+        '09:30 | Specific Concept Title | 2-sentence deep explanation of the conclusion and implications.\n\n' +
+        '===TAKEAWAYS===\n' +
+        '- Core Principle: Detailed explanation of takeaway 1.\n' +
+        '- Technical Mechanism: Detailed explanation of takeaway 2.\n' +
+        '- Quantitative Insight: Detailed explanation of takeaway 3.\n' +
+        '- Practical Application: Detailed explanation of takeaway 4.\n\n' +
+        '===CHAPTERS===\n' +
+        '00:00 | Introduction & Core Problem\n' +
+        '02:15 | Foundational Structure & Components\n' +
+        '05:40 | Deep Dive into the Mechanism\n' +
+        '09:30 | Mathematical Intuition & Examples\n' +
+        '13:45 | Summary & Final Conclusions\n\n' +
+        '===MINDMAP===\n' +
+        'Core Architecture | Sub-point 1 | Sub-point 2 | Sub-point 3\n' +
+        'Key Mechanisms | Sub-point 1 | Sub-point 2 | Sub-point 3\n' +
+        'Mathematical Model | Sub-point 1 | Sub-point 2 | Sub-point 3\n' +
+        'Real-World Impact | Sub-point 1 | Sub-point 2 | Sub-point 3\n\n' +
+        '===INFOGRAPHIC===\n' +
+        'metric_or_number | Badge | Card Title | 2-sentence explanation of this metric or core concept.\n' +
+        'metric_or_number | Badge | Card Title | 2-sentence explanation of this mechanism.\n' +
+        'metric_or_number | Badge | Card Title | 2-sentence explanation of this outcome.\n' +
+        'metric_or_number | Badge | Card Title | 2-sentence explanation of this takeaway.\n\n' +
+        '===SLIDES===\n' +
+        'Slide 1 Title | Bullet 1 ; Bullet 2 ; Bullet 3 | Detailed speaker notes for slide 1\n' +
+        'Slide 2 Title | Bullet 1 ; Bullet 2 ; Bullet 3 | Detailed speaker notes for slide 2\n' +
+        'Slide 3 Title | Bullet 1 ; Bullet 2 ; Bullet 3 | Detailed speaker notes for slide 3\n' +
+        'Slide 4 Title | Bullet 1 ; Bullet 2 ; Bullet 3 | Detailed speaker notes for slide 4\n\n' +
+        '===AUDIO===\n' +
+        'Host Alex | Engaging opening welcoming listeners to the deep-dive on ' + localTitle + '.\n' +
+        'Dr. Jordan | Detailed explanation of the first major example and technical concept in the video.\n' +
+        'Host Alex | Follow-up question exploring how the internal components or math actually work.\n' +
+        'Dr. Jordan | Clear breakdown of the parameters, architecture, and key takeaway.\n\n' +
+        '===QUIZ===\n' +
+        'Specific question 1 testing a concept from ' + localTitle + '? | Option A | Option B | Option C | Option D | 1 | Explanation of why the answer is correct.\n' +
+        'Specific question 2 testing a mechanism from ' + localTitle + '? | Option A | Option B | Option C | Option D | 2 | Explanation of why the answer is correct.\n' +
+        'Specific question 3 testing an example from ' + localTitle + '? | Option A | Option B | Option C | Option D | 0 | Explanation of why the answer is correct.\n\n' +
+        '===FLASHCARDS===\n' +
+        'Specific question 1 on ' + localTitle + ' | Clear, detailed answer 1\n' +
+        'Specific question 2 on ' + localTitle + ' | Clear, detailed answer 2\n' +
+        'Specific question 3 on ' + localTitle + ' | Clear, detailed answer 3\n' +
+        'Specific question 4 on ' + localTitle + ' | Clear, detailed answer 4\n\n' +
+        '===TRANSCRIPT===\n' +
+        '00:04 | Detailed spoken-style paragraph 1 (4-5 sentences) reconstructing the opening explanation and examples in ' + localTitle + '.\n' +
+        '01:12 | Detailed spoken-style paragraph 2 (4-5 sentences) explaining the core definitions and structure.\n' +
+        '03:25 | Detailed spoken-style paragraph 3 (4-5 sentences) walking through the intermediate steps and mechanisms.\n' +
+        '06:40 | Detailed spoken-style paragraph 4 (4-5 sentences) covering the mathematical intuition and worked examples.\n' +
+        '10:15 | Detailed spoken-style paragraph 5 (4-5 sentences) summarizing the conclusions and big picture.';
 
-      const rawAiText = await callAiWithFallback(
+      const rawAiOutput = await callAiEngine(
         prompt,
-        'You are an expert academic tutor. Output strictly valid JSON only.',
-        true
+        'You are NoteGPT AI engine. Produce exhaustive, accurate, textbook-grade notes strictly following the requested ===SECTION=== markers.',
+        extractedId
       );
 
-      const firstBrace = rawAiText.indexOf('{');
-      const lastBrace = rawAiText.lastIndexOf('}');
-      const cleanJsonStr = (firstBrace !== -1 && lastBrace !== -1)
-        ? rawAiText.slice(firstBrace, lastBrace + 1)
-        : rawAiText;
+      const parsedData = parseStructuredNotes(rawAiOutput, localTitle, localAuthor);
+      setStudyData(parsedData);
 
-      const parsed = JSON.parse(cleanJsonStr);
-
-      if (localTranscript.length === 0 && Array.isArray(parsed.generatedTranscript)) {
-        localTranscript = parsed.generatedTranscript;
-        setTranscript(localTranscript);
+      if (localParagraphs.length === 0 && parsedData.generatedParagraphs.length > 0) {
+        setParagraphs(parsedData.generatedParagraphs);
+        setSubtitles(parsedData.generatedParagraphs);
       }
-
-      setStudyData({
-        title: localTitle,
-        author: localAuthor,
-        summary: parsed.summary || ('Summary of ' + localTitle),
-        takeaways: Array.isArray(parsed.takeaways) ? parsed.takeaways : [],
-        branches: Array.isArray(parsed.branches) ? parsed.branches : ['Overview', 'Mechanism', 'Applications'],
-        infographic: Array.isArray(parsed.infographic) ? parsed.infographic : [],
-        slides: Array.isArray(parsed.slides) ? parsed.slides : [],
-        audioScript: Array.isArray(parsed.audioScript) ? parsed.audioScript : [],
-        quiz: Array.isArray(parsed.quiz) ? parsed.quiz : [],
-        flashcards: Array.isArray(parsed.flashcards) ? parsed.flashcards : [],
-        agentSteps: Array.isArray(parsed.agentSteps) ? parsed.agentSteps : []
-      });
 
       setChatMessages([
-        { role: 'assistant', text: 'FreeNoteGPT has analyzed "' + localTitle + '" by ' + localAuthor + '. Ask me anything about this video!' }
+        { role: 'assistant', text: 'I have generated the complete study notes for "' + localTitle + '". Ask me anything about specific timestamps, formulas, or concepts!' }
       ]);
     } catch (err) {
-      console.error('Error generating study data:', err);
-      const displayTitle = localTitle || 'Loaded Video';
-      if (localTranscript.length === 0) {
-        setTranscript([
-          { time: '00:00', text: 'Introduction to ' + displayTitle + ' by ' + localAuthor },
-          { time: '02:30', text: 'Core concepts, architecture, and worked examples.' }
-        ]);
-      }
-      setStudyData({
-        title: displayTitle,
-        author: localAuthor,
-        summary: 'Loaded "' + displayTitle + '" by ' + localAuthor + '. Click Fetch again or use AI Chat to explore specific questions.',
-        takeaways: [
-          'Topic: ' + displayTitle,
-          'Creator: ' + localAuthor
-        ],
-        branches: [displayTitle.slice(0, 24), 'Foundations', 'Key Concepts', 'Summary'],
-        infographic: [
-          { title: 'Topic', content: displayTitle, badge: 'Video', metric: 'Active' },
-          { title: 'Channel', content: localAuthor, badge: 'Creator', metric: '100%' }
-        ],
-        slides: [
-          { title: displayTitle, bullets: ['Presented by ' + localAuthor, 'Use AI Chat to ask specific questions'], notes: '' }
-        ],
-        audioScript: [
-          { speaker: 'Host Alex', text: 'Welcome to our overview of ' + displayTitle + ' by ' + localAuthor + '.' }
-        ],
-        quiz: [
-          { prompt: 'Which topic is covered in this video?', options: [displayTitle, 'Unrelated topic'], answer: 0 }
-        ],
-        flashcards: [
-          { q: 'Video Topic', a: displayTitle + ' (' + localAuthor + ')' }
-        ],
-        agentSteps: ['Loaded ' + displayTitle]
-      });
+      console.error('Error in handleFetch:', err);
     } finally {
       setIsFetching(false);
     }
@@ -262,7 +407,8 @@ export default function App() {
     setVideoUrl('');
     setVideoId(null);
     setVideoTitle('');
-    setTranscript([]);
+    setParagraphs([]);
+    setSubtitles([]);
     setStudyData(null);
     setChatMessages([]);
     setSearchQuery('');
@@ -275,6 +421,16 @@ export default function App() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleDownloadTranscript = () => {
+    const content = paragraphs.map(p => p.time + '\n' + p.text).join('\n\n');
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (videoTitle || 'transcript') + '.txt';
+    a.click();
+  };
+
   const handleSendMessage = async (e) => {
     e?.preventDefault();
     if (!chatInput.trim() || isChatLoading) return;
@@ -285,11 +441,12 @@ export default function App() {
     setIsChatLoading(true);
 
     try {
-      const chatPrompt = 'Video: ' + videoTitle + '\nSummary: ' + (studyData?.summary || '') + '\nQuestion: ' + userMsg;
-      const reply = await callAiWithFallback(
+      const contextStr = paragraphs.map(p => '[' + p.time + '] ' + p.text).join(' ').slice(0, 5000);
+      const chatPrompt = 'Video: ' + videoTitle + '\nSummary: ' + (studyData?.summaryParagraphs?.join(' ') || '') + '\nTranscript: ' + contextStr + '\n\nUser Question: ' + userMsg;
+      const reply = await callAiEngine(
         chatPrompt,
-        'You are FreeNoteGPT AI tutor. Answer clearly and concisely based on the video topic.',
-        false
+        'You are a knowledgeable AI tutor inside FreeNoteGPT. Answer questions clearly using concrete details from the video.',
+        videoId
       );
       setChatMessages(prev => [...prev, {
         role: 'assistant',
@@ -307,295 +464,419 @@ export default function App() {
 
   const getToolBtnClass = (toolName) => {
     return activeTool === toolName
-      ? 'flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs font-medium transition-all bg-slate-800 border-cyan-500/60 text-white shadow-sm'
-      : 'flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs font-medium transition-all bg-slate-900/60 border-slate-800/80 text-slate-300 hover:bg-slate-850';
+      ? 'flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs font-medium transition-all bg-slate-800/90 border-cyan-500/60 text-white shadow-sm'
+      : 'flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs font-medium transition-all bg-slate-900/70 border-slate-800 text-slate-300 hover:bg-slate-800/50';
   };
 
+  const activeList = leftSubTab === 'subtitles' ? subtitles : paragraphs;
+
   return (
-    <div className="flex h-screen w-screen bg-slate-950 text-slate-100 flex-col overflow-hidden select-none">
+    <div className="flex h-screen w-screen bg-[#0b0f19] text-slate-100 overflow-hidden select-none">
       
-      <header className="h-14 border-b border-slate-800 bg-slate-900/90 px-4 flex items-center justify-between z-20">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-white shadow-md">
+      {/* FAR-LEFT ICON SIDEBAR RAIL (Matches Real NoteGPT) */}
+      <aside className="w-14 border-r border-slate-800/80 bg-[#070a12] flex flex-col items-center py-4 justify-between z-30 flex-shrink-0">
+        <div className="flex flex-col items-center gap-5">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-white shadow-lg cursor-pointer" onClick={handleNewSession}>
             F
           </div>
-          <span className="font-bold text-sm tracking-wide bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
-            FreeNoteGPT
-          </span>
-          <span className="text-[10px] bg-slate-800 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full font-mono">
-            Free & Open
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button onClick={() => setShowShareModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-700/80 text-xs text-slate-200">
-            <Share2 className="w-3.5 h-3.5 text-slate-400" />
-            <span>Share</span>
+          <button onClick={() => setActiveTool('summarize')} title="AI Summary" className="p-2 rounded-xl text-slate-400 hover:text-cyan-400 hover:bg-slate-900 transition-colors">
+            <BookOpen className="w-4 h-4" />
           </button>
-          <button onClick={() => setShowUpgradeModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-700/80 text-xs text-amber-300 font-medium">
-            <Rocket className="w-3.5 h-3.5 text-amber-400" />
-            <span>Pro</span>
+          <button onClick={() => setActiveTool('mindmap')} title="Mind Map" className="p-2 rounded-xl text-slate-400 hover:text-amber-400 hover:bg-slate-900 transition-colors">
+            <Network className="w-4 h-4" />
           </button>
-          <button onClick={handleNewSession} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-200 text-slate-950 font-semibold text-xs shadow-sm">
-            <Plus className="w-4 h-4 text-slate-950" />
-            <span>New</span>
+          <button onClick={() => setActiveTool('flashcards')} title="Flashcards" className="p-2 rounded-xl text-slate-400 hover:text-yellow-400 hover:bg-slate-900 transition-colors">
+            <Layers className="w-4 h-4" />
+          </button>
+          <button onClick={() => setRightTab('chat')} title="AI Copilot" className="p-2 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-900 transition-colors">
+            <Compass className="w-4 h-4" />
           </button>
         </div>
-      </header>
 
-      <div className="flex-1 flex overflow-hidden">
+        <div className="flex flex-col items-center gap-4">
+          <button onClick={() => setShowUpgradeModal(true)} className="p-2 rounded-xl text-slate-500 hover:text-slate-300">
+            <Settings className="w-4 h-4" />
+          </button>
+          <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white">
+            R
+          </div>
+        </div>
+      </aside>
+
+      {/* MAIN CONTENT AREA */}
+      <div className="flex-1 flex flex-col overflow-hidden">
         
-        <div className="w-1/2 border-r border-slate-800 flex flex-col bg-slate-950/60">
-          <div className="p-3 border-b border-slate-800 flex gap-2 bg-slate-900/40">
-            <input 
-              type="text" 
-              value={videoUrl}
-              onChange={(e) => setVideoUrl(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleFetch()}
-              placeholder="Paste any YouTube video URL here and click Fetch..."
-              className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
-            />
-            <button 
-              onClick={handleFetch}
-              disabled={isFetching}
-              className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50"
+        {/* TOP HEADER BAR (Matches Real NoteGPT) */}
+        <header className="h-14 border-b border-slate-800/80 bg-[#0b0f19] px-4 flex items-center justify-between gap-4 z-20">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <button
+              onClick={handleNewSession}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-300 flex-shrink-0"
             >
-              {isFetching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-              <span>{isFetching ? 'Analyzing...' : 'Fetch'}</span>
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Back</span>
             </button>
+
+            {videoTitle ? (
+              <h1 className="font-semibold text-sm text-slate-100 truncate max-w-md" title={videoTitle}>
+                {videoTitle}
+              </h1>
+            ) : (
+              <span className="font-bold text-sm text-slate-200">FreeNoteGPT Workspace</span>
+            )}
+
+            {/* URL Input Bar always accessible */}
+            <div className="flex items-center gap-1.5 flex-1 max-w-md ml-2">
+              <input
+                type="text"
+                value={videoUrl}
+                onChange={(e) => setVideoUrl(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleFetch()}
+                placeholder="Paste YouTube link here..."
+                className="w-full bg-slate-900/90 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
+              />
+              <button
+                onClick={handleFetch}
+                disabled={isFetching}
+                className="px-3.5 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 disabled:opacity-50 flex-shrink-0"
+              >
+                {isFetching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                <span>{isFetching ? 'Analyzing' : 'Fetch'}</span>
+              </button>
+            </div>
           </div>
 
-          <div className="relative aspect-video bg-slate-950 flex items-center justify-center border-b border-slate-800">
-            {videoId ? (
-              <iframe
-                src={'https://www.youtube.com/embed/' + videoId + '?rel=0'}
-                className="w-full h-full border-0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-                title="YouTube Video Player"
-              />
-            ) : (
-              <div className="text-center p-6 space-y-2">
-                <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-500">
-                  <Video className="w-6 h-6" />
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={() => setShowShareModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200">
+              <Share2 className="w-3.5 h-3.5 text-slate-400" />
+              <span>Share</span>
+            </button>
+            <button onClick={() => setShowUpgradeModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-950/50 hover:bg-blue-900/50 border border-blue-800/60 text-xs text-blue-300 font-medium">
+              <Rocket className="w-3.5 h-3.5 text-rose-400" />
+              <span>Upgrade</span>
+            </button>
+            <button onClick={handleNewSession} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-200 text-slate-950 font-semibold text-xs shadow-sm">
+              <Plus className="w-4 h-4 text-slate-950" />
+              <span>New</span>
+            </button>
+          </div>
+        </header>
+
+        {/* SPLIT WORKSPACE */}
+        <div className="flex-1 flex overflow-hidden">
+          
+          {/* LEFT PANE: Video Player + Transcript/Subtitles/Chapter (42% width like NoteGPT) */}
+          <div className="w-[44%] border-r border-slate-800/80 flex flex-col bg-[#0b0f19] p-4 gap-3 overflow-hidden">
+            
+            {/* Video Player Card */}
+            <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-slate-800/80 shadow-lg flex-shrink-0 flex items-center justify-center">
+              {videoId ? (
+                <iframe
+                  key={videoId + '-' + seekSeconds}
+                  src={'https://www.youtube.com/embed/' + videoId + '?rel=0' + (seekSeconds > 0 ? '&start=' + seekSeconds + '&autoplay=1' : '')}
+                  className="w-full h-full border-0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  title="YouTube Video Player"
+                />
+              ) : (
+                <div className="text-center p-6 space-y-2">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-slate-500">
+                    <Video className="w-6 h-6" />
+                  </div>
+                  <p className="text-xs font-medium text-slate-300">Paste a YouTube URL Above</p>
+                  <p className="text-[11px] text-slate-500 max-w-xs">Click Fetch to load the video player, synchronized transcript, and full AI study notes.</p>
                 </div>
-                <p className="text-xs font-medium text-slate-300">No Video Loaded</p>
-                <p className="text-[11px] text-slate-500 max-w-xs">Paste a YouTube link above and click Fetch to load the video and generate AI study tools.</p>
+              )}
+            </div>
+
+            {/* Transcript / Subtitles / Chapter Bar (Matches Screenshot 3307) */}
+            <div className="flex items-center justify-between bg-slate-900/60 border border-slate-800/80 rounded-xl p-1.5 flex-shrink-0">
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setLeftSubTab('transcript')}
+                  className={leftSubTab === 'transcript' ? 'px-3 py-1.5 rounded-lg bg-slate-800 text-blue-400 text-xs font-semibold flex items-center gap-1.5' : 'px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 text-xs font-medium flex items-center gap-1.5'}
+                >
+                  <span className="text-[10px] border border-current rounded px-1">CC</span>
+                  <span>Transcript</span>
+                </button>
+                <button
+                  onClick={() => setLeftSubTab('subtitles')}
+                  className={leftSubTab === 'subtitles' ? 'px-3 py-1.5 rounded-lg bg-slate-800 text-blue-400 text-xs font-semibold flex items-center gap-1.5' : 'px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 text-xs font-medium flex items-center gap-1.5'}
+                >
+                  <span className="text-[10px] border border-current rounded px-1">CC</span>
+                  <span>Subtitles</span>
+                </button>
+                <button
+                  onClick={() => setLeftSubTab('chapter')}
+                  className={leftSubTab === 'chapter' ? 'px-3 py-1.5 rounded-lg bg-slate-800 text-blue-400 text-xs font-semibold flex items-center gap-1.5' : 'px-3 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 text-xs font-medium flex items-center gap-1.5'}
+                >
+                  <ListFilter className="w-3.5 h-3.5" />
+                  <span>Chapter</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1 pr-1">
+                <button onClick={() => handleCopy(paragraphs.map(p => p.time + '\n' + p.text).join('\n\n'))} title="Copy Transcript" className="p-1.5 text-slate-400 hover:text-slate-200 rounded-lg hover:bg-slate-800">
+                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+                <button onClick={handleDownloadTranscript} title="Download Transcript" className="p-1.5 text-slate-400 hover:text-slate-200 rounded-lg hover:bg-slate-800">
+                  <Download className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => setShowSearchBox(!showSearchBox)} title="Search Transcript" className="p-1.5 text-slate-400 hover:text-slate-200 rounded-lg hover:bg-slate-800">
+                  <Search className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {showSearchBox && (
+              <input
+                type="text"
+                placeholder="Filter transcript keywords..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 flex-shrink-0"
+              />
+            )}
+
+            {/* Paragraph-Grouped Transcript Body (Matches Screenshot 3307) */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-5">
+              {isFetching ? (
+                <div className="flex items-center justify-center h-40 text-xs text-slate-400 gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+                  <span>Extracting verbatim transcript & chapters...</span>
+                </div>
+              ) : leftSubTab === 'chapter' ? (
+                (studyData?.chapters?.length > 0 ? studyData.chapters : []).map((ch, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => handleSeek(ch.time)}
+                    className="p-3 rounded-xl bg-slate-900/50 border border-slate-800/80 hover:border-blue-500/40 cursor-pointer flex items-center gap-3 transition-colors"
+                  >
+                    <span className="text-xs font-mono text-blue-400 font-semibold">{ch.time}</span>
+                    <span className="text-xs text-slate-200 font-medium">{ch.title}</span>
+                  </div>
+                ))
+              ) : activeList.length === 0 ? (
+                <div className="flex items-center justify-center h-40 text-xs text-slate-500">
+                  Transcript paragraphs will appear here once you fetch a video.
+                </div>
+              ) : (
+                activeList
+                  .filter(item => item.text.toLowerCase().includes(searchQuery.toLowerCase()))
+                  .map((seg, idx) => (
+                    <div key={idx} className="space-y-1.5 group">
+                      <button
+                        onClick={() => handleSeek(seg.time)}
+                        className="text-xs font-mono font-semibold text-blue-400 hover:text-blue-300 block"
+                      >
+                        {seg.time}
+                      </button>
+                      <p className="text-[13px] text-slate-200/90 leading-relaxed select-text">
+                        {seg.text}
+                      </p>
+                    </div>
+                  ))
+              )}
+            </div>
+          </div>
+
+          {/* RIGHT PANE: AI Notes & AI Chat (56% width like NoteGPT) */}
+          <div className="flex-1 flex flex-col bg-[#0b0f19] p-4 gap-3 overflow-hidden">
+            
+            {/* Compact Pill Switcher: AI Notes | AI Chat */}
+            <div className="flex items-center justify-between flex-shrink-0">
+              <div className="inline-flex p-1 rounded-xl bg-slate-900 border border-slate-800">
+                <button
+                  onClick={() => setRightTab('notes')}
+                  className={rightTab === 'notes' ? 'flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-800 text-blue-400 text-xs font-semibold' : 'flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 text-xs font-medium'}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>AI Notes</span>
+                </button>
+                <button
+                  onClick={() => setRightTab('chat')}
+                  className={rightTab === 'chat' ? 'flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-800 text-blue-400 text-xs font-semibold' : 'flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 text-xs font-medium'}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>AI Chat</span>
+                </button>
+              </div>
+            </div>
+
+            {rightTab === 'notes' ? (
+              <div className="flex-1 flex flex-col overflow-hidden gap-3">
+                
+                {/* 4x2 Tool Grid (Matches Screenshot 3307 Layout) */}
+                <div className="grid grid-cols-4 gap-2 flex-shrink-0">
+                  <button onClick={() => setActiveTool('summarize')} className={getToolBtnClass('summarize')}>
+                    <div className="flex items-center gap-2"><ListFilter className="w-4 h-4 text-cyan-400" /><span>Summarize</span></div>
+                    <span className="text-slate-500 text-xs">⋮</span>
+                  </button>
+                  <button onClick={() => setActiveTool('mindmap')} className={getToolBtnClass('mindmap')}>
+                    <div className="flex items-center gap-2"><Network className="w-4 h-4 text-amber-400" /><span>Mind Map</span></div>
+                    <span className="text-slate-500 text-xs">⋮</span>
+                  </button>
+                  <button onClick={() => setActiveTool('infographic')} className={getToolBtnClass('infographic')}>
+                    <div className="flex items-center gap-2"><LayoutGrid className="w-4 h-4 text-emerald-400" /><span>Infographic</span></div>
+                  </button>
+                  <button onClick={() => setActiveTool('slides')} className={getToolBtnClass('slides')}>
+                    <div className="flex items-center gap-2"><Presentation className="w-4 h-4 text-orange-400" /><span>Slides</span></div>
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                  </button>
+
+                  <button onClick={() => setActiveTool('audio')} className={getToolBtnClass('audio')}>
+                    <div className="flex items-center gap-2"><Mic className="w-4 h-4 text-orange-400" /><span>Audio Overview</span></div>
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                  </button>
+                  <button onClick={() => setActiveTool('quiz')} className={getToolBtnClass('quiz')}>
+                    <div className="flex items-center gap-2"><HelpCircle className="w-4 h-4 text-yellow-400" /><span>Quiz</span></div>
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                  </button>
+                  <button onClick={() => setActiveTool('flashcards')} className={getToolBtnClass('flashcards')}>
+                    <div className="flex items-center gap-2"><CreditCard className="w-4 h-4 text-yellow-400" /><span>Flashcards</span></div>
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                  </button>
+                  <button onClick={() => setActiveTool('agent')} className={getToolBtnClass('agent')}>
+                    <div className="flex items-center gap-2"><Cpu className="w-4 h-4 text-cyan-400" /><span>AI Agent</span></div>
+                    <ExternalLink className="w-3 h-3 text-slate-400" />
+                  </button>
+                </div>
+
+                {/* Rich Article Output Card */}
+                <div className="flex-1 bg-[#111726] border border-slate-800/90 rounded-2xl overflow-y-auto p-6 select-text">
+                  {isFetching ? (
+                    <div className="flex flex-col items-center justify-center h-full space-y-3 text-slate-400">
+                      <Loader2 className="w-7 h-7 animate-spin text-cyan-400" />
+                      <p className="text-sm font-medium text-slate-200">Synthesizing in-depth study article, mind map & quizzes...</p>
+                      <p className="text-xs text-slate-500">Reading video transcript and extracting technical concepts</p>
+                    </div>
+                  ) : !studyData ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center space-y-2">
+                      <Cpu className="w-10 h-10 text-slate-700 mb-1" />
+                      <p className="text-sm font-semibold text-slate-300">Ready to Generate Deep Study Notes</p>
+                      <p className="text-xs text-slate-500 max-w-sm">
+                        Paste any YouTube video URL in the top bar and click Fetch to generate NoteGPT-style multi-paragraph summaries, timestamped insights, mind maps, slides, quizzes, and flashcards.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* 1. DEEP ARTICLE SUMMARIZE VIEW (Matches Screenshot 3307) */}
+                      {activeTool === 'summarize' && (
+                        <div className="space-y-6 max-w-3xl">
+                          <h1 className="text-xl font-bold text-white leading-snug">
+                            {studyData.headline}
+                          </h1>
+
+                          <div className="space-y-3">
+                            <h2 className="text-base font-bold text-white">Summary</h2>
+                            {studyData.summaryParagraphs.map((para, i) => (
+                              <p key={i} className="text-sm text-slate-300 leading-7">
+                                {para}
+                              </p>
+                            ))}
+                          </div>
+
+                          {studyData.highlights.length > 0 && (
+                            <div className="space-y-3 pt-2">
+                              <h2 className="text-base font-bold text-white">Timestamped Section Breakdown</h2>
+                              <div className="space-y-3">
+                                {studyData.highlights.map((h, i) => (
+                                  <div key={i} className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={() => handleSeek(h.time)}
+                                        className="text-xs font-mono font-bold text-blue-400 hover:underline"
+                                      >
+                                        {h.time}
+                                      </button>
+                                      <span className="text-sm font-semibold text-slate-100">{h.title}</span>
+                                    </div>
+                                    <p className="text-xs text-slate-300 leading-relaxed">{h.detail}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {studyData.takeaways.length > 0 && (
+                            <div className="space-y-3 pt-2">
+                              <h2 className="text-base font-bold text-white">Key Takeaways</h2>
+                              <ul className="space-y-2.5">
+                                {studyData.takeaways.map((pt, i) => (
+                                  <li key={i} className="flex items-start gap-2.5 text-sm text-slate-300 leading-relaxed">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-2.5 flex-shrink-0" />
+                                    <span>{pt}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {activeTool === 'mindmap' && <MindMapPanel title={studyData.title} branches={studyData.mindmapBranches} />}
+                      {activeTool === 'infographic' && <InfographicPanel items={studyData.infographic} title={studyData.title} />}
+                      {activeTool === 'slides' && <SlidesPanel slides={studyData.slides} />}
+                      {activeTool === 'audio' && <AudioPanel script={studyData.audioScript} />}
+                      {activeTool === 'quiz' && <QuizPanel questions={studyData.quiz} />}
+                      {activeTool === 'flashcards' && <FlashcardsPanel cards={studyData.flashcards} />}
+                      {activeTool === 'agent' && <AgentPanel studyData={studyData} />}
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* AI CHAT TAB */
+              <div className="flex-1 bg-[#111726] border border-slate-800/90 rounded-2xl flex flex-col overflow-hidden">
+                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                  {chatMessages.length === 0 ? (
+                    <div className="flex items-center justify-center h-64 text-xs text-slate-500">
+                      Fetch a video or ask any question below to chat with your AI study tutor.
+                    </div>
+                  ) : (
+                    chatMessages.map((m, idx) => (
+                      <div key={idx} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+                        <div className={m.role === 'user' ? 'max-w-[85%] rounded-2xl px-4 py-2.5 text-xs bg-cyan-600 text-white rounded-tr-none leading-relaxed' : 'max-w-[85%] rounded-2xl px-4 py-2.5 text-xs bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none leading-relaxed'}>
+                          {m.text}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {isChatLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-tl-none px-4 py-2 text-xs text-slate-400 flex items-center gap-2">
+                        <RefreshCw className="w-3 h-3 animate-spin text-cyan-400" />
+                        <span>Thinking...</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <form onSubmit={handleSendMessage} className="p-3 border-t border-slate-800 bg-slate-900/60 flex gap-2">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder={videoTitle ? ('Ask anything about ' + videoTitle.slice(0, 35) + '...') : 'Ask a question...'}
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+                  />
+                  <button type="submit" disabled={isChatLoading || !chatInput.trim()} className="p-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl disabled:opacity-40">
+                    <Send className="w-4 h-4" />
+                  </button>
+                </form>
               </div>
             )}
           </div>
-
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="p-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/30">
-              <span className="text-xs font-semibold text-slate-300 flex items-center gap-2">
-                <span className={transcript.length > 0 ? 'w-2 h-2 rounded-full bg-emerald-400' : 'w-2 h-2 rounded-full bg-slate-600'} />
-                Synchronized Transcript
-              </span>
-              <input 
-                type="text"
-                placeholder="Search transcript..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[11px] text-slate-300 w-36 focus:outline-none"
-              />
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-3 space-y-2">
-              {isFetching ? (
-                <div className="flex items-center justify-center h-32 text-xs text-slate-400 gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
-                  Extracting transcript & generating study breakdown...
-                </div>
-              ) : transcript.length === 0 ? (
-                <div className="flex items-center justify-center h-32 text-xs text-slate-500">
-                  Transcript will appear here after fetching a video.
-                </div>
-              ) : (
-                transcript
-                  .filter(t => t.text.toLowerCase().includes(searchQuery.toLowerCase()))
-                  .map((seg, idx) => (
-                    <div key={idx} className="group flex gap-3 p-2 rounded-lg hover:bg-slate-900 text-xs">
-                      <span className="font-mono text-cyan-400/80 font-medium text-[11px] pt-0.5">{seg.time}</span>
-                      <p className="text-slate-300 group-hover:text-slate-100 leading-relaxed">{seg.text}</p>
-                    </div>
-                  ))
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="w-1/2 flex flex-col bg-slate-950 overflow-hidden">
-          
-          <div className="p-3 border-b border-slate-800 bg-slate-900/50 flex gap-2">
-            <button onClick={() => setActiveTab('transcript')} className={activeTab === 'transcript' ? 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-slate-800 border-slate-700 text-white' : 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-slate-900/50 border-transparent text-slate-400'}>
-              <FileText className="w-3.5 h-3.5" />
-              <span>Transcript</span>
-            </button>
-            <button onClick={() => setActiveTab('notes')} className={activeTab === 'notes' ? 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-cyan-950/40 border-cyan-800/80 text-cyan-300' : 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-slate-900/50 border-transparent text-slate-400'}>
-              <Cpu className="w-3.5 h-3.5 text-cyan-400" />
-              <span>AI Notes</span>
-            </button>
-            <button onClick={() => setActiveTab('chat')} className={activeTab === 'chat' ? 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-slate-800 border-slate-700 text-white' : 'flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold border bg-slate-900/50 border-transparent text-slate-400'}>
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>AI Chat</span>
-            </button>
-          </div>
-
-          {activeTab === 'transcript' && (
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {transcript.length === 0 ? (
-                <div className="flex items-center justify-center h-64 text-xs text-slate-500">
-                  No transcript loaded yet. Paste a YouTube URL and click Fetch.
-                </div>
-              ) : (
-                <>
-                  <div className="flex justify-between items-center pb-2 border-b border-slate-800">
-                    <span className="text-xs text-slate-400 font-mono">Segments: {transcript.length}</span>
-                    <button onClick={() => handleCopy(transcript.map(t => t.time + ' ' + t.text).join('\n'))} className="flex items-center gap-1 text-xs text-cyan-400">
-                      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                      <span>{copied ? 'Copied' : 'Copy All'}</span>
-                    </button>
-                  </div>
-                  <pre className="text-xs font-mono text-slate-300 leading-relaxed whitespace-pre-wrap bg-slate-900/60 p-4 rounded-xl border border-slate-800">
-                    {transcript.map(t => '[' + t.time + '] ' + t.text).join('\n\n')}
-                  </pre>
-                </>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'notes' && (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="p-3 border-b border-slate-800 grid grid-cols-2 gap-2 bg-slate-900/30">
-                <button onClick={() => setActiveTool('summarize')} className={getToolBtnClass('summarize')}>
-                  <div className="flex items-center gap-2"><ListFilter className="w-4 h-4 text-cyan-400" /><span>Summarize</span></div>
-                  <span className="text-slate-500 text-xs">•••</span>
-                </button>
-                <button onClick={() => setActiveTool('mindmap')} className={getToolBtnClass('mindmap')}>
-                  <div className="flex items-center gap-2"><Network className="w-4 h-4 text-amber-400" /><span>Mind Map</span></div>
-                  <span className="text-slate-500 text-xs">•••</span>
-                </button>
-                <button onClick={() => setActiveTool('infographic')} className={getToolBtnClass('infographic')}>
-                  <div className="flex items-center gap-2"><LayoutGrid className="w-4 h-4 text-emerald-400" /><span>Infographic</span></div>
-                </button>
-                <button onClick={() => setActiveTool('slides')} className={getToolBtnClass('slides')}>
-                  <div className="flex items-center gap-2"><Presentation className="w-4 h-4 text-orange-400" /><span>Slides</span></div>
-                  <span className="w-2 h-2 rounded-full bg-rose-500" />
-                </button>
-                <button onClick={() => setActiveTool('audio')} className={getToolBtnClass('audio')}>
-                  <div className="flex items-center gap-2"><Mic className="w-4 h-4 text-orange-400" /><span>Audio Overview</span></div>
-                  <span className="w-2 h-2 rounded-full bg-rose-500" />
-                </button>
-                <button onClick={() => setActiveTool('quiz')} className={getToolBtnClass('quiz')}>
-                  <div className="flex items-center gap-2"><HelpCircle className="w-4 h-4 text-yellow-400" /><span>Quiz</span></div>
-                  <span className="w-2 h-2 rounded-full bg-rose-500" />
-                </button>
-                <button onClick={() => setActiveTool('flashcards')} className={getToolBtnClass('flashcards')}>
-                  <div className="flex items-center gap-2"><CreditCard className="w-4 h-4 text-yellow-400" /><span>Flashcards</span></div>
-                  <span className="w-2 h-2 rounded-full bg-rose-500" />
-                </button>
-                <button onClick={() => setActiveTool('agent')} className={getToolBtnClass('agent')}>
-                  <div className="flex items-center gap-2"><Cpu className="w-4 h-4 text-cyan-400" /><span>AI Agent</span></div>
-                  <ExternalLink className="w-3 h-3 text-slate-400" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto">
-                {isFetching ? (
-                  <div className="flex flex-col items-center justify-center h-64 space-y-3 text-slate-400">
-                    <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
-                    <p className="text-xs font-medium">FreeNoteGPT is generating custom study notes for this video...</p>
-                  </div>
-                ) : !studyData ? (
-                  <div className="flex flex-col items-center justify-center h-64 p-6 text-center space-y-2">
-                    <Cpu className="w-8 h-8 text-slate-700 mb-1" />
-                    <p className="text-xs font-semibold text-slate-300">FreeNoteGPT Study Workspace</p>
-                    <p className="text-[11px] text-slate-500 max-w-xs">
-                      Paste any YouTube URL on the left and click Fetch to generate summaries, mind maps, slides, audio overviews, quizzes, and flashcards.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    {activeTool === 'summarize' && (
-                      <div className="p-4 space-y-4">
-                        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-2">
-                          <span className="text-[10px] uppercase font-bold text-cyan-400 tracking-wider">Executive Summary</span>
-                          <h3 className="text-sm font-semibold text-slate-100">{studyData.title}</h3>
-                          <p className="text-xs text-slate-400 leading-relaxed">{studyData.summary}</p>
-                        </div>
-                        <div className="space-y-2">
-                          <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider block">Key Takeaways</span>
-                          {studyData.takeaways.map((pt, i) => (
-                            <div key={i} className="flex items-start gap-2 text-xs text-slate-300 bg-slate-900/60 border border-slate-800/80 p-2.5 rounded-lg">
-                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 mt-1.5 flex-shrink-0" />
-                              <span>{pt}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {activeTool === 'mindmap' && <MindMapPanel title={studyData.title} branches={studyData.branches} />}
-                    {activeTool === 'infographic' && <InfographicPanel items={studyData.infographic} title={studyData.title} summary={studyData.summary} />}
-                    {activeTool === 'slides' && <SlidesPanel slides={studyData.slides} />}
-                    {activeTool === 'audio' && <AudioPanel script={studyData.audioScript} />}
-                    {activeTool === 'quiz' && <QuizPanel questions={studyData.quiz} />}
-                    {activeTool === 'flashcards' && <FlashcardsPanel cards={studyData.flashcards} />}
-                    {activeTool === 'agent' && <AgentPanel steps={studyData.agentSteps} title={studyData.title} />}
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'chat' && (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {chatMessages.length === 0 ? (
-                  <div className="flex items-center justify-center h-64 text-xs text-slate-500">
-                    Fetch a video first or ask a question below to start chatting.
-                  </div>
-                ) : (
-                  chatMessages.map((m, idx) => (
-                    <div key={idx} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-                      <div className={m.role === 'user' ? 'max-w-[85%] rounded-2xl px-4 py-2.5 text-xs bg-cyan-600 text-white rounded-tr-none' : 'max-w-[85%] rounded-2xl px-4 py-2.5 text-xs bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none'}>
-                        {m.text}
-                      </div>
-                    </div>
-                  ))
-                )}
-                {isChatLoading && (
-                  <div className="flex justify-start">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-tl-none px-4 py-2 text-xs text-slate-400 flex items-center gap-2">
-                      <RefreshCw className="w-3 h-3 animate-spin text-cyan-400" />
-                      Thinking...
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <form onSubmit={handleSendMessage} className="p-3 border-t border-slate-800 bg-slate-900/40 flex gap-2">
-                <input 
-                  type="text" 
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder={videoTitle ? ('Ask about ' + videoTitle.slice(0, 32) + '...') : 'Ask FreeNoteGPT a question...'}
-                  className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
-                />
-                <button type="submit" disabled={isChatLoading || !chatInput.trim()} className="p-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg disabled:opacity-40">
-                  <Send className="w-4 h-4" />
-                </button>
-              </form>
-            </div>
-          )}
-
         </div>
       </div>
 
+      {/* MODALS */}
       {showShareModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="font-bold text-sm text-slate-100">Share FreeNoteGPT</h3>
+              <h3 className="font-bold text-sm text-slate-100">Share Study Notes</h3>
               <button onClick={() => setShowShareModal(false)} className="text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
             </div>
             <div className="flex gap-2">
@@ -615,7 +896,7 @@ export default function App() {
               <h3 className="font-bold text-sm text-slate-100">FreeNoteGPT Pro</h3>
               <button onClick={() => setShowUpgradeModal(false)} className="text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
             </div>
-            <p className="text-xs text-slate-300">All 8 AI study tools are unlocked and free on FreeNoteGPT.</p>
+            <p className="text-xs text-slate-300">All 8 NoteGPT study engines—including verbatim transcripts, deep multi-paragraph summaries, mind maps, slides, and quizzes—are unlocked for free.</p>
             <button onClick={() => setShowUpgradeModal(false)} className="w-full py-2 bg-amber-500 text-slate-950 font-bold text-xs rounded-xl">Got It</button>
           </div>
         </div>
@@ -624,28 +905,43 @@ export default function App() {
   );
 }
 
+// ── SUB-COMPONENTS ──
+
 function MindMapPanel({ title, branches = [] }) {
   const [zoom, setZoom] = useState(1);
   return (
-    <div className="p-4 flex flex-col h-full space-y-3">
-      <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-        <span className="text-xs font-semibold text-slate-300">Concept Map</span>
-        <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded p-0.5 text-xs">
-          <button onClick={() => setZoom(z => Math.max(0.7, z - 0.1))} className="px-2 py-0.5">-</button>
-          <span className="px-1 text-[10px] text-slate-400">{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom(z => Math.min(1.4, z + 0.1))} className="px-2 py-0.5">+</button>
+    <div className="flex flex-col h-full space-y-4">
+      <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+        <span className="text-sm font-bold text-white">Hierarchical Concept Mind Map</span>
+        <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1 text-xs">
+          <button onClick={() => setZoom(z => Math.max(0.7, z - 0.1))} className="px-2 py-0.5 hover:bg-slate-800 rounded">-</button>
+          <span className="px-2 text-[11px] text-slate-400">{Math.round(zoom * 100)}%</span>
+          <button onClick={() => setZoom(z => Math.min(1.4, z + 0.1))} className="px-2 py-0.5 hover:bg-slate-800 rounded">+</button>
         </div>
       </div>
-      <div className="flex-1 bg-slate-900/40 border border-slate-800 rounded-xl p-4 overflow-auto flex items-center justify-center min-h-[260px]">
-        <div style={{ transform: 'scale(' + zoom + ')', transformOrigin: 'center' }} className="flex items-center gap-8 transition-transform">
-          <div className="bg-cyan-950 border border-cyan-500/80 text-cyan-200 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg max-w-[160px] text-center">
+
+      <div className="flex-1 bg-slate-950/60 border border-slate-800/80 rounded-xl p-6 overflow-auto flex items-center justify-start min-h-[320px]">
+        <div style={{ transform: 'scale(' + zoom + ')', transformOrigin: 'left center' }} className="flex items-center gap-8 transition-transform">
+          <div className="bg-cyan-950 border-2 border-cyan-500/80 text-cyan-100 px-4 py-3 rounded-xl text-xs font-bold shadow-lg max-w-[180px] text-center">
             {title}
           </div>
-          <div className="space-y-3">
-            {branches.map((b, i) => (
+
+          <div className="space-y-4">
+            {branches.map((item, i) => (
               <div key={i} className="flex items-center gap-4">
-                <div className="w-6 h-px bg-slate-700" />
-                <div className="bg-slate-900 border border-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs">{b}</div>
+                <div className="w-6 h-0.5 bg-slate-700" />
+                <div className="bg-slate-900 border border-amber-500/50 text-amber-200 px-3.5 py-2 rounded-lg text-xs font-semibold min-w-[140px]">
+                  {item.branch}
+                </div>
+                {item.children && item.children.length > 0 && (
+                  <div className="space-y-1.5 pl-3 border-l border-slate-700">
+                    {item.children.map((ch, cIdx) => (
+                      <div key={cIdx} className="bg-slate-900/90 border border-slate-800 text-slate-300 px-3 py-1 rounded text-[11px]">
+                        {ch}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -655,56 +951,60 @@ function MindMapPanel({ title, branches = [] }) {
   );
 }
 
-function InfographicPanel({ items = [], title, summary }) {
-  const cards = items.length > 0 ? items : [
-    { title: 'Topic', content: title, badge: 'Focus', metric: 'Core' },
-    { title: 'Synopsis', content: summary, badge: 'Summary', metric: '100%' }
-  ];
+function InfographicPanel({ items = [], title }) {
   return (
-    <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-      {cards.map((c, i) => (
-        <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
-          <div>
-            <div className="flex justify-between items-start mb-2">
-              <span className="text-[9px] font-bold uppercase bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded">{c.badge}</span>
-              <span className="text-sm font-bold text-emerald-400">{c.metric}</span>
+    <div className="space-y-4">
+      <h2 className="text-base font-bold text-white border-b border-slate-800 pb-3">Visual Knowledge Infographic: {title}</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {items.map((c, i) => (
+          <div key={i} className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex flex-col justify-between space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded">
+                {c.badge}
+              </span>
+              <span className="text-base font-extrabold text-emerald-400">{c.metric}</span>
             </div>
-            <h4 className="text-xs font-medium text-slate-100 mb-1">{c.title}</h4>
-            <p className="text-[11px] text-slate-400">{c.content}</p>
+            <h4 className="text-sm font-bold text-white">{c.title}</h4>
+            <p className="text-xs text-slate-300 leading-relaxed">{c.content}</p>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
 
 function SlidesPanel({ slides = [] }) {
   const [slide, setSlide] = useState(0);
-  const activeSlide = slides[slide] || { title: 'Slide', bullets: [], notes: '' };
+  const activeSlide = slides[slide] || { title: 'Presentation Slide', bullets: [], notes: '' };
   return (
-    <div className="p-4 space-y-3">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 min-h-[200px] flex flex-col justify-between">
+    <div className="space-y-4">
+      <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+        <h2 className="text-base font-bold text-white">Lecture Slide Deck</h2>
+        <span className="text-xs text-slate-400 font-mono">Slide {slide + 1} of {slides.length || 1}</span>
+      </div>
+
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 min-h-[240px] flex flex-col justify-between shadow-lg">
         <div>
-          <h3 className="text-sm font-bold text-slate-100 mb-3">{activeSlide.title}</h3>
-          <ul className="space-y-1.5">
+          <h3 className="text-base font-bold text-white mb-4">{activeSlide.title}</h3>
+          <ul className="space-y-2.5">
             {(activeSlide.bullets || []).map((b, i) => (
-              <li key={i} className="text-xs text-slate-300 flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-orange-400 mt-1.5 flex-shrink-0" />
+              <li key={i} className="text-sm text-slate-200 flex items-start gap-2.5">
+                <span className="w-2 h-2 rounded-full bg-orange-400 mt-2 flex-shrink-0" />
                 <span>{b}</span>
               </li>
             ))}
           </ul>
         </div>
         {activeSlide.notes && (
-          <div className="mt-4 pt-2 border-t border-slate-800 text-[11px] text-slate-400 italic">
-            Notes: {activeSlide.notes}
+          <div className="mt-6 pt-3 border-t border-slate-800 text-xs text-slate-400 italic">
+            Speaker Notes: {activeSlide.notes}
           </div>
         )}
       </div>
+
       <div className="flex justify-between items-center text-xs">
-        <button onClick={() => setSlide(s => Math.max(0, s - 1))} disabled={slide === 0} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg disabled:opacity-30">Previous</button>
-        <span className="text-slate-500 font-mono text-[11px]">Slide {slide + 1} of {slides.length}</span>
-        <button onClick={() => setSlide(s => Math.min(slides.length - 1, s + 1))} disabled={slide >= slides.length - 1} className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg disabled:opacity-30">Next</button>
+        <button onClick={() => setSlide(s => Math.max(0, s - 1))} disabled={slide === 0} className="px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl disabled:opacity-30">Previous Slide</button>
+        <button onClick={() => setSlide(s => Math.min(slides.length - 1, s + 1))} disabled={slide >= slides.length - 1} className="px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl disabled:opacity-30">Next Slide</button>
       </div>
     </div>
   );
@@ -739,19 +1039,19 @@ function AudioPanel({ script = [] }) {
   };
 
   return (
-    <div className="p-4 space-y-3">
-      <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-        <span className="text-xs font-semibold text-slate-300">Audio Podcast Overview</span>
-        <button onClick={toggleSpeech} className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 text-slate-950 font-bold rounded-lg text-xs">
+    <div className="space-y-4">
+      <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+        <span className="text-base font-bold text-white">AI Podcast Deep-Dive Overview</span>
+        <button onClick={toggleSpeech} className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-400 text-slate-950 font-bold rounded-xl text-xs">
           {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-          <span>{isPlaying ? 'Pause' : 'Play Audio'}</span>
+          <span>{isPlaying ? 'Pause Podcast' : 'Play Audio Overview'}</span>
         </button>
       </div>
-      <div className="space-y-2">
+      <div className="space-y-3">
         {script.map((line, idx) => (
-          <div key={idx} className={isPlaying && currentLine === idx ? 'p-3 rounded-xl border text-xs bg-orange-500/10 border-orange-500/40 text-orange-200' : 'p-3 rounded-xl border text-xs bg-slate-900 border-slate-800 text-slate-400'}>
-            <div className="font-bold text-[10px] text-slate-300 mb-1">{line.speaker}</div>
-            <p>{line.text}</p>
+          <div key={idx} className={isPlaying && currentLine === idx ? 'p-4 rounded-xl border text-sm bg-orange-500/10 border-orange-500/40 text-orange-100' : 'p-4 rounded-xl border text-sm bg-slate-900 border-slate-800 text-slate-300'}>
+            <div className="font-bold text-xs text-orange-400 mb-1">{line.speaker}</div>
+            <p className="leading-relaxed">{line.text}</p>
           </div>
         ))}
       </div>
@@ -763,43 +1063,49 @@ function QuizPanel({ questions = [] }) {
   const [qIdx, setQIdx] = useState(0);
   const [selected, setSelected] = useState(null);
   const [submitted, setSubmitted] = useState(false);
-  const quiz = questions[qIdx] || { prompt: 'No question available', options: [], answer: 0 };
+  const quiz = questions[qIdx] || { prompt: 'No question available', options: [], answer: 0, explanation: '' };
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+    <div className="space-y-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
         <div className="flex justify-between items-center">
-          <span className="text-[10px] font-bold uppercase bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2 py-0.5 rounded">
-            Question {qIdx + 1} of {questions.length}
+          <span className="text-xs font-bold uppercase bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2.5 py-1 rounded-lg">
+            Question {qIdx + 1} of {questions.length || 1}
           </span>
           {questions.length > 1 && (
-            <button onClick={() => { setQIdx((qIdx + 1) % questions.length); setSelected(null); setSubmitted(false); }} className="text-xs text-cyan-400 hover:underline">
+            <button onClick={() => { setQIdx((qIdx + 1) % questions.length); setSelected(null); setSubmitted(false); }} className="text-xs text-cyan-400 hover:underline font-semibold">
               Next Question →
             </button>
           )}
         </div>
-        <p className="text-xs font-semibold text-slate-100">{quiz.prompt}</p>
-        <div className="space-y-2 pt-1">
+        <p className="text-sm font-bold text-white leading-relaxed">{quiz.prompt}</p>
+        <div className="space-y-2.5 pt-1">
           {(quiz.options || []).map((opt, i) => (
             <button
               key={i}
               onClick={() => !submitted && setSelected(i)}
               className={
                 submitted && i === quiz.answer
-                  ? 'w-full text-left p-3 rounded-lg border text-xs bg-emerald-950/80 border-emerald-500 text-emerald-200'
+                  ? 'w-full text-left p-3.5 rounded-xl border text-xs bg-emerald-950/80 border-emerald-500 text-emerald-200 font-medium'
                   : selected === i
-                  ? 'w-full text-left p-3 rounded-lg border text-xs bg-cyan-950/60 border-cyan-500 text-white'
-                  : 'w-full text-left p-3 rounded-lg border text-xs bg-slate-950/60 border-slate-800 text-slate-300 hover:bg-slate-900'
+                  ? 'w-full text-left p-3.5 rounded-xl border text-xs bg-cyan-950/60 border-cyan-500 text-white font-medium'
+                  : 'w-full text-left p-3.5 rounded-xl border text-xs bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-800'
               }
             >
-              <span className="font-mono text-[10px] opacity-60 mr-2">[{String.fromCharCode(65 + i)}]</span>
+              <span className="font-mono text-[11px] opacity-60 mr-2">[{String.fromCharCode(65 + i)}]</span>
               <span>{opt}</span>
             </button>
           ))}
         </div>
-        <button onClick={() => setSubmitted(true)} disabled={selected === null} className="w-full mt-2 py-2 bg-yellow-500 text-slate-950 font-bold text-xs rounded-lg disabled:opacity-40">
-          Check Answer
+        <button onClick={() => setSubmitted(true)} disabled={selected === null} className="w-full py-2.5 bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-bold text-xs rounded-xl disabled:opacity-40">
+          Verify Answer
         </button>
+        {submitted && quiz.explanation && (
+          <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 leading-relaxed">
+            <strong className="text-emerald-400 block mb-1">Explanation:</strong>
+            {quiz.explanation}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -811,41 +1117,47 @@ function FlashcardsPanel({ cards = [] }) {
   const activeCard = cards[index] || { q: 'No flashcards', a: '' };
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="space-y-4">
       <div className="flex justify-between items-center text-xs text-slate-400">
-        <span>Spaced Repetition Deck</span>
-        <span>{index + 1} of {cards.length}</span>
+        <span className="font-bold text-sm text-white">Active Recall Flashcards</span>
+        <span>Card {index + 1} of {cards.length || 1}</span>
       </div>
-      <div onClick={() => setFlipped(!flipped)} className="h-44 bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer shadow-lg">
-        <span className="text-[10px] uppercase font-bold text-slate-500 mb-2">
-          {flipped ? 'Answer' : 'Question (Click to flip)'}
+      <div onClick={() => setFlipped(!flipped)} className="h-52 bg-slate-900 border border-slate-800 hover:border-cyan-500/40 rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer shadow-lg transition-all">
+        <span className="text-[10px] uppercase font-bold text-cyan-400 mb-3 tracking-wider">
+          {flipped ? 'Answer' : 'Question (Click Card to Flip)'}
         </span>
-        <p className="text-xs font-medium text-slate-100 max-w-sm">
+        <p className="text-sm font-medium text-slate-100 max-w-md leading-relaxed">
           {flipped ? activeCard.a : activeCard.q}
         </p>
       </div>
-      <div className="flex gap-2">
-        <button onClick={() => { setFlipped(false); setIndex((index + 1) % cards.length); }} className="flex-1 py-2 bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-lg text-xs font-semibold">Need Review</button>
-        <button onClick={() => { setFlipped(false); setIndex((index + 1) % cards.length); }} className="flex-1 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-lg text-xs font-semibold">Mastered</button>
+      <div className="flex gap-3">
+        <button onClick={() => { setFlipped(false); setIndex((index - 1 + cards.length) % cards.length); }} className="flex-1 py-2.5 bg-slate-900 border border-slate-800 text-slate-300 rounded-xl text-xs font-semibold">← Previous Card</button>
+        <button onClick={() => { setFlipped(false); setIndex((index + 1) % cards.length); }} className="flex-1 py-2.5 bg-cyan-600 text-white rounded-xl text-xs font-semibold">Next Card →</button>
       </div>
     </div>
   );
 }
 
-function AgentPanel({ steps = [], title }) {
+function AgentPanel({ studyData }) {
   return (
-    <div className="p-4 space-y-3">
-      <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-        <span className="text-xs font-semibold text-slate-300">Autonomous Agent: {title.slice(0, 30)}</span>
-        <span className="text-[10px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-2 py-0.5 rounded-full font-mono">Verified</span>
+    <div className="space-y-4">
+      <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+        <span className="text-base font-bold text-white">Autonomous Study Agent Report</span>
+        <span className="text-[11px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-mono">Complete</span>
       </div>
-      <div className="space-y-2">
-        {steps.map((st, i) => (
-          <div key={i} className="flex items-center gap-3 p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs">
-            <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-            <span className="text-slate-200">{st}</span>
-          </div>
-        ))}
+      <div className="space-y-2.5">
+        <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 flex items-center gap-3">
+          <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <span>Extracted video stream & caption segments for <strong>{studyData.title}</strong></span>
+        </div>
+        <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 flex items-center gap-3">
+          <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <span>Synthesized {studyData.highlights.length} timestamped highlights and {studyData.takeaways.length} core takeaways</span>
+        </div>
+        <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 flex items-center gap-3">
+          <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <span>Compiled {studyData.quiz.length} self-assessment quiz questions and {studyData.flashcards.length} active recall flashcards</span>
+        </div>
       </div>
     </div>
   );
