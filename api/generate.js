@@ -6,27 +6,26 @@ export default async function handler(req, res) {
   const { prompt, systemInstruction, jsonMode = false } = req.body;
   const apiKey = process.env.GEMINI_API_KEY;
 
-  const cleanJson = (str) => {
-    let cleaned = str.trim();
-    cleaned = cleaned.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/, '').trim();
-    const firstBrace = cleaned.indexOf('{');
-    const lastBrace = cleaned.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-      return cleaned.slice(firstBrace, lastBrace + 1);
+  const extractJsonBlock = (str) => {
+    const text = (str || '').trim();
+    const first = text.indexOf('{');
+    const last = text.lastIndexOf('}');
+    if (first !== -1 && last !== -1 && last > first) {
+      return text.slice(first, last + 1);
     }
-    return cleaned;
+    return text;
   };
 
-  // 1. Try Google Gemini API if GEMINI_API_KEY is configured in Vercel
   if (apiKey && apiKey !== 'your_gemini_api_key_here') {
     const models = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-flash'];
-    for (const model of models) {
+    for (let i = 0; i < models.length; i++) {
+      const model = models[i];
       try {
         const payload = {
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             temperature: 0.3,
-            ...(jsonMode ? { responseMimeType: "application/json" } : {})
+            ...(jsonMode ? { responseMimeType: 'application/json' } : {})
           }
         };
 
@@ -34,60 +33,54 @@ export default async function handler(req, res) {
           payload.systemInstruction = { parts: [{ text: systemInstruction }] };
         }
 
-        const response = await fetch(
-          `[https://generativelanguage.googleapis.com/v1beta/models/$](https://generativelanguage.googleapis.com/v1beta/models/$){model}:generateContent?key=${apiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          }
-        );
+        const apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
 
         const data = await response.json();
-        if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-          const text = data.candidates[0].content.parts[0].text;
+        const candidateText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (response.ok && candidateText) {
           return res.status(200).json({
-            text: jsonMode ? cleanJson(text) : text.trim(),
+            text: jsonMode ? extractJsonBlock(candidateText) : candidateText.trim(),
             provider: model
           });
         }
       } catch (e) {
-        console.warn(`Gemini ${model} failed:`, e.message);
+        console.warn('Gemini error:', e.message);
       }
     }
   }
 
-  // 2. Automatic Free Keyless LLM Fallback (Always works even without GEMINI_API_KEY)
   try {
-    const fallbackRes = await fetch('[https://text.pollinations.ai/](https://text.pollinations.ai/)', {
+    const fallbackRes = await fetch('https://text.pollinations.ai/openai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        messages: [
-          {
-            role: 'system',
-            content: systemInstruction || 'You are a helpful AI tutor.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
         model: 'openai',
-        jsonMode: Boolean(jsonMode)
+        messages: [
+          { role: 'system', content: systemInstruction || 'You are a helpful AI tutor.' },
+          { role: 'user', content: prompt }
+        ],
+        ...(jsonMode ? { response_format: { type: 'json_object' } } : {})
       })
     });
 
     if (fallbackRes.ok) {
-      const rawText = await fallbackRes.text();
-      return res.status(200).json({
-        text: jsonMode ? cleanJson(rawText) : rawText.trim(),
-        provider: 'free-ai-engine'
-      });
+      const fbData = await fallbackRes.json();
+      const rawText = fbData.choices?.[0]?.message?.content || '';
+      if (rawText) {
+        return res.status(200).json({
+          text: jsonMode ? extractJsonBlock(rawText) : rawText.trim(),
+          provider: 'fallback-ai'
+        });
+      }
     }
   } catch (err) {
-    console.error('Fallback AI error:', err);
+    console.error('Fallback error:', err);
   }
 
-  return res.status(500).json({ error: 'AI generation service temporarily unavailable.' });
+  return res.status(500).json({ error: 'AI generation service unavailable' });
 }

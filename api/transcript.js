@@ -19,9 +19,9 @@ export default async function handler(req, res) {
   let authorName = '';
   let description = '';
 
-  // 1. Fetch official title & channel name via Noembed / YouTube oEmbed
   try {
-    const oembedRes = await fetch(`[https://noembed.com/embed?url=https://www.youtube.com/watch?v=$](https://noembed.com/embed?url=https://www.youtube.com/watch?v=$){videoId}`);
+    const oembedUrl = 'https://noembed.com/embed?url=https://www.youtube.com/watch?v=' + videoId;
+    const oembedRes = await fetch(oembedUrl);
     if (oembedRes.ok) {
       const oembedData = await oembedRes.json();
       videoTitle = oembedData.title || '';
@@ -31,9 +31,9 @@ export default async function handler(req, res) {
     console.warn('oEmbed failed:', e);
   }
 
-  // 2. Attempt YouTube InnerTube & Watch Page Caption Extraction
   try {
-    const watchRes = await fetch(`[https://www.youtube.com/watch?v=$](https://www.youtube.com/watch?v=$){videoId}`, {
+    const watchUrl = 'https://www.youtube.com/watch?v=' + videoId;
+    const watchRes = await fetch(watchUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9'
@@ -54,7 +54,7 @@ export default async function handler(req, res) {
     const captionMatch = html.match(/"captionTracks":(\[.*?\])/);
     if (captionMatch?.[1]) {
       const tracks = JSON.parse(captionMatch[1]);
-      const enTrack = tracks.find(t => t.languageCode?.startsWith('en')) || tracks[0];
+      const enTrack = tracks.find(t => t.languageCode && t.languageCode.indexOf('en') === 0) || tracks[0];
       if (enTrack?.baseUrl) {
         const xmlRes = await fetch(enTrack.baseUrl);
         const xml = await xmlRes.text();
@@ -77,7 +77,7 @@ export default async function handler(req, res) {
         if (transcript.length > 0) {
           return res.status(200).json({
             videoId,
-            videoTitle: videoTitle || `YouTube Video (${videoId})`,
+            videoTitle: videoTitle || 'YouTube Video',
             authorName: authorName || 'YouTube Creator',
             description,
             hasRealCaptions: true,
@@ -87,12 +87,12 @@ export default async function handler(req, res) {
       }
     }
   } catch (e) {
-    console.warn('Watch page scrape fallback:', e);
+    console.warn('Watch scrape fallback:', e);
   }
 
   return res.status(200).json({
     videoId,
-    videoTitle: videoTitle || `YouTube Video (${videoId})`,
+    videoTitle: videoTitle || 'YouTube Video',
     authorName: authorName || 'YouTube Creator',
     description,
     hasRealCaptions: false,

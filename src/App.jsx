@@ -27,6 +27,7 @@ export default function App() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const extractVideoId = (url) => {
+    if (!url) return null;
     const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
     return match ? match[1] : null;
   };
@@ -35,13 +36,48 @@ export default function App() {
     const total = Math.max(0, Math.floor(Number(sec) || 0));
     const mm = String(Math.floor(total / 60)).padStart(2, '0');
     const ss = String(total % 60).padStart(2, '0');
-    return `${mm}:${ss}`;
+    return mm + ':' + ss;
+  };
+
+  const callAiWithFallback = async (promptText, sysText, isJson) => {
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: promptText,
+          systemInstruction: sysText,
+          jsonMode: isJson
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.text) return data.text;
+      }
+    } catch (e) {
+      console.warn('Backend AI call failed, using direct browser AI:', e);
+    }
+
+    const directRes = await fetch('https://text.pollinations.ai/openai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'openai',
+        messages: [
+          { role: 'system', content: sysText },
+          { role: 'user', content: promptText }
+        ],
+        ...(isJson ? { response_format: { type: 'json_object' } } : {})
+      })
+    });
+    const directData = await directRes.json();
+    return directData.choices?.[0]?.message?.content || '';
   };
 
   const handleFetch = async () => {
     const extractedId = extractVideoId(videoUrl);
     if (!extractedId) {
-      alert("Please paste a valid YouTube link first.");
+      alert('Please paste a valid YouTube link first.');
       return;
     }
 
@@ -52,25 +88,24 @@ export default function App() {
     setTranscript([]);
     setChatMessages([]);
 
-    let localTitle = `YouTube Video (${extractedId})`;
-    let localAuthor = 'YouTube Creator';
+    let localTitle = '';
+    let localAuthor = 'YouTube Channel';
     let localDesc = '';
     let localTranscript = [];
 
     try {
-      // 1. Client-side oEmbed check so we always get the real video title immediately
       try {
-        const clientOembed = await fetch(`[https://noembed.com/embed?url=https://www.youtube.com/watch?v=$](https://noembed.com/embed?url=https://www.youtube.com/watch?v=$){extractedId}`);
+        const noembedUrl = 'https://noembed.com/embed?url=https://www.youtube.com/watch?v=' + extractedId;
+        const clientOembed = await fetch(noembedUrl);
         if (clientOembed.ok) {
           const oe = await clientOembed.json();
           if (oe.title) localTitle = oe.title;
           if (oe.author_name) localAuthor = oe.author_name;
         }
-      } catch {
-        // Ignore client oembed failure
+      } catch (e) {
+        console.warn('Client oEmbed error:', e);
       }
 
-      // 2. Server-side transcript and metadata fetch
       try {
         const res = await fetch('/api/transcript', {
           method: 'POST',
@@ -79,9 +114,7 @@ export default function App() {
         });
         if (res.ok) {
           const meta = await res.json();
-          if (meta.videoTitle && !meta.videoTitle.startsWith('YouTube Video (')) {
-            localTitle = meta.videoTitle;
-          }
+          if (!localTitle && meta.videoTitle) localTitle = meta.videoTitle;
           if (meta.authorName) localAuthor = meta.authorName;
           if (meta.description) localDesc = meta.description;
 
@@ -97,95 +130,69 @@ export default function App() {
         console.warn('Server transcript call failed:', e);
       }
 
+      if (!localTitle) {
+        localTitle = 'YouTube Lecture';
+      }
       setVideoTitle(localTitle);
 
-      // 3. Generate complete study notes for the active video
       const transcriptContext = localTranscript.length > 0
-        ? localTranscript.map(t => `[${t.time}] ${t.text}`).join(' ').slice(0, 5000)
-        : `Video Title: "${localTitle}" by ${localAuthor}. Description: ${localDesc}`;
+        ? localTranscript.map(t => '[' + t.time + '] ' + t.text).join(' ').slice(0, 4500)
+        : 'Video Title: "' + localTitle + '" by ' + localAuthor + '. Description: ' + localDesc;
 
-      const prompt = `Generate a comprehensive study workspace for the YouTube video:
-Title: "${localTitle}"
-Creator: "${localAuthor}"
-Context: ${transcriptContext}
+      const prompt = 'Generate a complete educational study workspace for the YouTube video titled "' + localTitle + '" by "' + localAuthor + '".\n' +
+        'Context: ' + transcriptContext + '\n\n' +
+        'Return ONLY a valid JSON object with these exact keys:\n' +
+        '{\n' +
+        '  "summary": "Detailed 3-sentence executive summary of ' + localTitle + '",\n' +
+        '  "takeaways": ["Key point 1", "Key point 2", "Key point 3", "Key point 4"],\n' +
+        '  "branches": ["Subtopic 1", "Subtopic 2", "Subtopic 3", "Subtopic 4"],\n' +
+        '  "infographic": [\n' +
+        '    {"title": "Core Concept", "content": "Explanation", "badge": "Foundation", "metric": "Core"},\n' +
+        '    {"title": "Mechanism", "content": "Explanation", "badge": "Process", "metric": "Key"},\n' +
+        '    {"title": "Application", "content": "Explanation", "badge": "Outcome", "metric": "100%"}\n' +
+        '  ],\n' +
+        '  "slides": [\n' +
+        '    {"title": "1. Introduction", "bullets": ["Point 1", "Point 2", "Point 3"], "notes": "Speaker notes"},\n' +
+        '    {"title": "2. Core Mechanism", "bullets": ["Point 1", "Point 2", "Point 3"], "notes": "Speaker notes"},\n' +
+        '    {"title": "3. Key Takeaways", "bullets": ["Point 1", "Point 2", "Point 3"], "notes": "Speaker notes"}\n' +
+        '  ],\n' +
+        '  "audioScript": [\n' +
+        '    {"speaker": "Host Alex", "text": "Welcome! Today we are breaking down ' + localTitle + '."},\n' +
+        '    {"speaker": "Dr. Jordan", "text": "Direct explanation of the main concepts covered in this video."},\n' +
+        '    {"speaker": "Host Alex", "text": "Key takeaway summary for students."}\n' +
+        '  ],\n' +
+        '  "quiz": [\n' +
+        '    {"prompt": "Question 1 about ' + localTitle + '?", "options": ["Option A", "Option B", "Option C", "Option D"], "answer": 0},\n' +
+        '    {"prompt": "Question 2 about ' + localTitle + '?", "options": ["Option A", "Option B", "Option C", "Option D"], "answer": 1}\n' +
+        '  ],\n' +
+        '  "flashcards": [\n' +
+        '    {"q": "Question 1", "a": "Answer 1"},\n' +
+        '    {"q": "Question 2", "a": "Answer 2"},\n' +
+        '    {"q": "Question 3", "a": "Answer 3"}\n' +
+        '  ],\n' +
+        '  "agentSteps": ["Analyzed ' + localTitle + '", "Extracted key concepts and definitions", "Built quiz and flashcards"],\n' +
+        '  "generatedTranscript": [\n' +
+        '    {"time": "00:00", "text": "Introduction and motivation for ' + localTitle + '."},\n' +
+        '    {"time": "02:15", "text": "Core definitions and foundational building blocks."},\n' +
+        '    {"time": "05:30", "text": "Detailed walkthrough of the underlying mechanism and architecture."},\n' +
+        '    {"time": "09:45", "text": "Visual examples and step-by-step problem solving."},\n' +
+        '    {"time": "13:20", "text": "Review of main takeaways and conclusions."}\n' +
+        '  ]\n' +
+        '}';
 
-Return ONLY a valid JSON object with this exact structure tailored specifically to "${localTitle}":
-{
-  "summary": "Detailed 3-sentence executive summary explaining the core concepts covered in ${localTitle}.",
-  "takeaways": [
-    "Key technical takeaway 1",
-    "Key technical takeaway 2",
-    "Key technical takeaway 3",
-    "Key technical takeaway 4"
-  ],
-  "branches": [
-    "Subtopic 1",
-    "Subtopic 2",
-    "Subtopic 3",
-    "Subtopic 4"
-  ],
-  "infographic": [
-    {"title": "Foundation", "content": "Core concept explanation", "badge": "Concept", "metric": "Core"},
-    {"title": "Mechanism", "content": "How the process works", "badge": "Process", "metric": "Key"},
-    {"title": "Takeaway", "content": "Practical application", "badge": "Result", "metric": "100%"}
-  ],
-  "slides": [
-    {"title": "1. Introduction & Core Problem", "bullets": ["Key point 1", "Key point 2", "Key point 3"], "notes": "Speaker explanation"},
-    {"title": "2. Architecture & Mechanics", "bullets": ["Key point 1", "Key point 2", "Key point 3"], "notes": "Speaker explanation"},
-    {"title": "3. Practical Summary", "bullets": ["Key point 1", "Key point 2", "Key point 3"], "notes": "Speaker explanation"}
-  ],
-  "audioScript": [
-    {"speaker": "Host Alex", "text": "Welcome to FreeNoteGPT! Today we are exploring ${localTitle} by ${localAuthor}."},
-    {"speaker": "Dr. Jordan", "text": "Explain the core technical breakthrough or concept taught in this video."},
-    {"speaker": "Host Alex", "text": "Summarize why this concept is essential for students and engineers."}
-  ],
-  "quiz": [
-    {
-      "prompt": "Question 1 testing a core concept from ${localTitle}?",
-      "options": ["Option A", "Option B", "Option C", "Option D"],
-      "answer": 0
-    },
-    {
-      "prompt": "Question 2 testing another key mechanism from ${localTitle}?",
-      "options": ["Option A", "Option B", "Option C", "Option D"],
-      "answer": 1
-    }
-  ],
-  "flashcards": [
-    {"q": "Question 1 on ${localTitle}", "a": "Clear concise answer 1"},
-    {"q": "Question 2 on ${localTitle}", "a": "Clear concise answer 2"},
-    {"q": "Question 3 on ${localTitle}", "a": "Clear concise answer 3"}
-  ],
-  "agentSteps": [
-    "Extracted topic structure for ${localTitle}",
-    "Synthesized key mathematical & conceptual mechanisms",
-    "Generated verified study notes, quiz questions, and flashcards"
-  ],
-  "generatedTranscript": [
-    {"time": "00:00", "text": "Introduction to the core topic and intuitive motivation."},
-    {"time": "02:15", "text": "Breaking down the fundamental structure and components."},
-    {"time": "05:40", "text": "Step-by-step walkthrough of how the mechanism processes information."},
-    {"time": "09:10", "text": "Mathematical intuition and visual examples."},
-    {"time": "13:30", "text": "Key takeaways and final review of the topic."}
-  ]
-}`;
+      const rawAiText = await callAiWithFallback(
+        prompt,
+        'You are an expert academic tutor. Output strictly valid JSON only.',
+        true
+      );
 
-      const aiRes = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          systemInstruction: "You are an expert academic tutor. Output strictly valid JSON with no markdown formatting.",
-          jsonMode: true
-        })
-      });
+      const firstBrace = rawAiText.indexOf('{');
+      const lastBrace = rawAiText.lastIndexOf('}');
+      const cleanJsonStr = (firstBrace !== -1 && lastBrace !== -1)
+        ? rawAiText.slice(firstBrace, lastBrace + 1)
+        : rawAiText;
 
-      const aiData = await aiRes.json();
-      if (!aiRes.ok || !aiData.text) {
-        throw new Error(aiData.error || 'Failed to generate AI study notes');
-      }
-
-      const parsed = JSON.parse(aiData.text);
+      const parsed = JSON.parse(cleanJsonStr);
 
       if (localTranscript.length === 0 && Array.isArray(parsed.generatedTranscript)) {
         localTranscript = parsed.generatedTranscript;
@@ -195,59 +202,56 @@ Return ONLY a valid JSON object with this exact structure tailored specifically 
       setStudyData({
         title: localTitle,
         author: localAuthor,
-        summary: parsed.summary || `Executive summary of ${localTitle}.`,
-        takeaways: parsed.takeaways || [],
-        branches: parsed.branches || ["Core Concept", "Mechanism", "Applications"],
-        infographic: parsed.infographic || [],
-        slides: parsed.slides || [],
-        audioScript: parsed.audioScript || [],
-        quiz: Array.isArray(parsed.quiz) ? parsed.quiz : [parsed.quiz].filter(Boolean),
-        flashcards: parsed.flashcards || [],
-        agentSteps: parsed.agentSteps || []
+        summary: parsed.summary || ('Summary of ' + localTitle),
+        takeaways: Array.isArray(parsed.takeaways) ? parsed.takeaways : [],
+        branches: Array.isArray(parsed.branches) ? parsed.branches : ['Overview', 'Mechanism', 'Applications'],
+        infographic: Array.isArray(parsed.infographic) ? parsed.infographic : [],
+        slides: Array.isArray(parsed.slides) ? parsed.slides : [],
+        audioScript: Array.isArray(parsed.audioScript) ? parsed.audioScript : [],
+        quiz: Array.isArray(parsed.quiz) ? parsed.quiz : [],
+        flashcards: Array.isArray(parsed.flashcards) ? parsed.flashcards : [],
+        agentSteps: Array.isArray(parsed.agentSteps) ? parsed.agentSteps : []
       });
 
       setChatMessages([
-        { role: 'assistant', text: `FreeNoteGPT has analyzed "${localTitle}" by ${localAuthor}. Ask me any questions about this video!` }
+        { role: 'assistant', text: 'FreeNoteGPT has analyzed "' + localTitle + '" by ' + localAuthor + '. Ask me anything about this video!' }
       ]);
     } catch (err) {
-      console.error("Workspace generation error:", err);
+      console.error('Error generating study data:', err);
+      const displayTitle = localTitle || 'Loaded Video';
       if (localTranscript.length === 0) {
         setTranscript([
-          { time: "00:00", text: `Topic: ${localTitle} (${localAuthor})` },
-          { time: "01:00", text: "Core concepts and lecture walkthrough loaded." }
+          { time: '00:00', text: 'Introduction to ' + displayTitle + ' by ' + localAuthor },
+          { time: '02:30', text: 'Core concepts, architecture, and worked examples.' }
         ]);
       }
       setStudyData({
-        title: localTitle,
+        title: displayTitle,
         author: localAuthor,
-        summary: `Study overview for "${localTitle}" by ${localAuthor}. Use the AI Chat tab or click Fetch again to regenerate deep notes.`,
+        summary: 'Loaded "' + displayTitle + '" by ' + localAuthor + '. Click Fetch again or use AI Chat to explore specific questions.',
         takeaways: [
-          `Video Title: ${localTitle}`,
-          `Creator / Channel: ${localAuthor}`,
-          "Interactive player and study tools active"
+          'Topic: ' + displayTitle,
+          'Creator: ' + localAuthor
         ],
-        branches: [localTitle.slice(0, 25), "Core Concepts", "Key Mechanisms", "Summary"],
+        branches: [displayTitle.slice(0, 24), 'Foundations', 'Key Concepts', 'Summary'],
         infographic: [
-          { title: "Video Topic", content: localTitle, badge: "Active", metric: "100%" },
-          { title: "Channel", content: localAuthor, badge: "Author", metric: "Verified" }
+          { title: 'Topic', content: displayTitle, badge: 'Video', metric: 'Active' },
+          { title: 'Channel', content: localAuthor, badge: 'Creator', metric: '100%' }
         ],
         slides: [
-          { title: localTitle, bullets: [`Created by ${localAuthor}`, "Key concepts & lecture breakdown"], notes: "" }
+          { title: displayTitle, bullets: ['Presented by ' + localAuthor, 'Use AI Chat to ask specific questions'], notes: '' }
         ],
         audioScript: [
-          { speaker: "Host Alex", text: `Welcome to our study session on ${localTitle} by ${localAuthor}.` }
+          { speaker: 'Host Alex', text: 'Welcome to our overview of ' + displayTitle + ' by ' + localAuthor + '.' }
         ],
         quiz: [
-          { prompt: `What is the primary subject of "${localTitle}"?`, options: [localTitle, "Unrelated topic"], answer: 0 }
+          { prompt: 'Which topic is covered in this video?', options: [displayTitle, 'Unrelated topic'], answer: 0 }
         ],
         flashcards: [
-          { q: "Lecture Title", a: `${localTitle} by ${localAuthor}` }
+          { q: 'Video Topic', a: displayTitle + ' (' + localAuthor + ')' }
         ],
-        agentSteps: [`Indexed "${localTitle}" by ${localAuthor}`]
+        agentSteps: ['Loaded ' + displayTitle]
       });
-      setChatMessages([
-        { role: 'assistant', text: `Loaded "${localTitle}". Ask me any question below!` }
-      ]);
     } finally {
       setIsFetching(false);
     }
@@ -281,23 +285,20 @@ Return ONLY a valid JSON object with this exact structure tailored specifically 
     setIsChatLoading(true);
 
     try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: `Video: ${videoTitle}\nSummary: ${studyData?.summary || ''}\nTranscript: ${transcript.map(t => t.text).join(' ')}\n\nQuestion: ${userMsg}`,
-          systemInstruction: "You are FreeNoteGPT AI tutor. Answer clearly and accurately."
-        })
-      });
-      const data = await res.json();
+      const chatPrompt = 'Video: ' + videoTitle + '\nSummary: ' + (studyData?.summary || '') + '\nQuestion: ' + userMsg;
+      const reply = await callAiWithFallback(
+        chatPrompt,
+        'You are FreeNoteGPT AI tutor. Answer clearly and concisely based on the video topic.',
+        false
+      );
       setChatMessages(prev => [...prev, {
         role: 'assistant',
-        text: data.text || "Unable to generate response right now."
+        text: reply || 'Could not generate a response.'
       }]);
     } catch {
       setChatMessages(prev => [...prev, {
         role: 'assistant',
-        text: "Connection error while contacting AI tutor."
+        text: 'Error communicating with AI service.'
       }]);
     } finally {
       setIsChatLoading(false);
@@ -344,7 +345,6 @@ Return ONLY a valid JSON object with this exact structure tailored specifically 
 
       <div className="flex-1 flex overflow-hidden">
         
-        {/* LEFT COLUMN */}
         <div className="w-1/2 border-r border-slate-800 flex flex-col bg-slate-950/60">
           <div className="p-3 border-b border-slate-800 flex gap-2 bg-slate-900/40">
             <input 
@@ -368,7 +368,7 @@ Return ONLY a valid JSON object with this exact structure tailored specifically 
           <div className="relative aspect-video bg-slate-950 flex items-center justify-center border-b border-slate-800">
             {videoId ? (
               <iframe
-                src={`[https://www.youtube-nocookie.com/embed/$](https://www.youtube-nocookie.com/embed/$){videoId}?autoplay=0&rel=0`}
+                src={'https://www.youtube.com/embed/' + videoId + '?rel=0'}
                 className="w-full h-full border-0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
@@ -388,7 +388,7 @@ Return ONLY a valid JSON object with this exact structure tailored specifically 
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="p-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/30">
               <span className="text-xs font-semibold text-slate-300 flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${transcript.length > 0 ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+                <span className={transcript.length > 0 ? 'w-2 h-2 rounded-full bg-emerald-400' : 'w-2 h-2 rounded-full bg-slate-600'} />
                 Synchronized Transcript
               </span>
               <input 
@@ -404,7 +404,7 @@ Return ONLY a valid JSON object with this exact structure tailored specifically 
               {isFetching ? (
                 <div className="flex items-center justify-center h-32 text-xs text-slate-400 gap-2">
                   <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
-                  Extracting transcript & timestamps...
+                  Extracting transcript & generating study breakdown...
                 </div>
               ) : transcript.length === 0 ? (
                 <div className="flex items-center justify-center h-32 text-xs text-slate-500">
@@ -424,7 +424,6 @@ Return ONLY a valid JSON object with this exact structure tailored specifically 
           </div>
         </div>
 
-        {/* RIGHT COLUMN */}
         <div className="w-1/2 flex flex-col bg-slate-950 overflow-hidden">
           
           <div className="p-3 border-b border-slate-800 bg-slate-900/50 flex gap-2">
@@ -452,13 +451,13 @@ Return ONLY a valid JSON object with this exact structure tailored specifically 
                 <>
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800">
                     <span className="text-xs text-slate-400 font-mono">Segments: {transcript.length}</span>
-                    <button onClick={() => handleCopy(transcript.map(t => `${t.time} ${t.text}`).join('\n'))} className="flex items-center gap-1 text-xs text-cyan-400">
+                    <button onClick={() => handleCopy(transcript.map(t => t.time + ' ' + t.text).join('\n'))} className="flex items-center gap-1 text-xs text-cyan-400">
                       {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                       <span>{copied ? 'Copied' : 'Copy All'}</span>
                     </button>
                   </div>
                   <pre className="text-xs font-mono text-slate-300 leading-relaxed whitespace-pre-wrap bg-slate-900/60 p-4 rounded-xl border border-slate-800">
-                    {transcript.map(t => `[${t.time}] ${t.text}`).join('\n\n')}
+                    {transcript.map(t => '[' + t.time + '] ' + t.text).join('\n\n')}
                   </pre>
                 </>
               )}
@@ -505,7 +504,7 @@ Return ONLY a valid JSON object with this exact structure tailored specifically 
                 {isFetching ? (
                   <div className="flex flex-col items-center justify-center h-64 space-y-3 text-slate-400">
                     <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
-                    <p className="text-xs font-medium">FreeNoteGPT is generating custom study notes...</p>
+                    <p className="text-xs font-medium">FreeNoteGPT is generating custom study notes for this video...</p>
                   </div>
                 ) : !studyData ? (
                   <div className="flex flex-col items-center justify-center h-64 p-6 text-center space-y-2">
@@ -579,7 +578,7 @@ Return ONLY a valid JSON object with this exact structure tailored specifically 
                   type="text" 
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder={videoTitle ? `Ask about ${videoTitle.slice(0, 32)}...` : "Ask FreeNoteGPT a question..."}
+                  placeholder={videoTitle ? ('Ask about ' + videoTitle.slice(0, 32) + '...') : 'Ask FreeNoteGPT a question...'}
                   className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
                 />
                 <button type="submit" disabled={isChatLoading || !chatInput.trim()} className="p-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg disabled:opacity-40">
@@ -638,7 +637,7 @@ function MindMapPanel({ title, branches = [] }) {
         </div>
       </div>
       <div className="flex-1 bg-slate-900/40 border border-slate-800 rounded-xl p-4 overflow-auto flex items-center justify-center min-h-[260px]">
-        <div style={{ transform: `scale(${zoom})`, transformOrigin: 'center' }} className="flex items-center gap-8 transition-transform">
+        <div style={{ transform: 'scale(' + zoom + ')', transformOrigin: 'center' }} className="flex items-center gap-8 transition-transform">
           <div className="bg-cyan-950 border border-cyan-500/80 text-cyan-200 px-4 py-2.5 rounded-xl text-xs font-bold shadow-lg max-w-[160px] text-center">
             {title}
           </div>
@@ -658,8 +657,8 @@ function MindMapPanel({ title, branches = [] }) {
 
 function InfographicPanel({ items = [], title, summary }) {
   const cards = items.length > 0 ? items : [
-    { title: "Topic", content: title, badge: "Focus", metric: "Core" },
-    { title: "Synopsis", content: summary, badge: "Summary", metric: "100%" }
+    { title: 'Topic', content: title, badge: 'Focus', metric: 'Core' },
+    { title: 'Synopsis', content: summary, badge: 'Summary', metric: '100%' }
   ];
   return (
     <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -681,7 +680,7 @@ function InfographicPanel({ items = [], title, summary }) {
 
 function SlidesPanel({ slides = [] }) {
   const [slide, setSlide] = useState(0);
-  const activeSlide = slides[slide] || { title: "Slide", bullets: [], notes: "" };
+  const activeSlide = slides[slide] || { title: 'Slide', bullets: [], notes: '' };
   return (
     <div className="p-4 space-y-3">
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 min-h-[200px] flex flex-col justify-between">
@@ -716,7 +715,7 @@ function AudioPanel({ script = [] }) {
   const [currentLine, setCurrentLine] = useState(0);
 
   const toggleSpeech = () => {
-    if (!('speechSynthesis' in window)) return alert("Speech synthesis not supported.");
+    if (!('speechSynthesis' in window)) return alert('Speech synthesis not supported.');
     if (isPlaying) {
       window.speechSynthesis.cancel();
       setIsPlaying(false);
@@ -764,7 +763,7 @@ function QuizPanel({ questions = [] }) {
   const [qIdx, setQIdx] = useState(0);
   const [selected, setSelected] = useState(null);
   const [submitted, setSubmitted] = useState(false);
-  const quiz = questions[qIdx] || { prompt: "No question available", options: [], answer: 0 };
+  const quiz = questions[qIdx] || { prompt: 'No question available', options: [], answer: 0 };
 
   return (
     <div className="p-4 space-y-4">
@@ -809,7 +808,7 @@ function QuizPanel({ questions = [] }) {
 function FlashcardsPanel({ cards = [] }) {
   const [flipped, setFlipped] = useState(false);
   const [index, setIndex] = useState(0);
-  const activeCard = cards[index] || { q: "No flashcards", a: "" };
+  const activeCard = cards[index] || { q: 'No flashcards', a: '' };
 
   return (
     <div className="p-4 space-y-4">
